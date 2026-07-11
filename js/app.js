@@ -17,7 +17,6 @@ let runningMode = "VIDEO";
 let currentFacingMode = 'user';
 let currentStream = null;
 let selectedDeviceId = null;
-let frameLoopStarted = false;
 
 // マスクサイズ
 const MASK_WIDTH = 1024 / 480 * 20;
@@ -103,6 +102,14 @@ function initThree() {
     renderer = new THREE.WebGLRenderer({ canvas: arCanvas, alpha: true, antialias: true });
     renderer.setPixelRatio(1);
 
+    // モバイル用
+    arCanvas.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        console.error('WebGLコンテキストが失われました。再読み込みします。');
+        showToast('映像を再初期化しています…');
+        setTimeout(() => window.location.reload(), 800);
+    }, false);
+
     const textureLoader = new THREE.TextureLoader();
     const maskTexture = textureLoader.load('assets/base.png');
     maskTexture.colorSpace = THREE.SRGBColorSpace;
@@ -183,14 +190,7 @@ function startCamera() {
 
                 camera.aspect = videoWidth / videoHeight;
                 camera.updateProjectionMatrix();
-                if (!frameLoopStarted) {
-                    frameLoopStarted = true;
-                    if (video.requestVideoFrameCallback) {
-                        video.requestVideoFrameCallback(onVideoFrame);
-                    } else {
-                        window.requestAnimationFrame(predictLoopFallback);
-                    }
-                }
+                startFrameLoop();
                 resolve();
             }, { once: true });
         });
@@ -341,6 +341,16 @@ async function selectCamera(deviceId) {
 }
 
 // 検出・合成
+let rafLoopRunning = false;
+
+function startFrameLoop() {
+    if (video.requestVideoFrameCallback) {
+        video.requestVideoFrameCallback(onVideoFrame);
+    } else if (!rafLoopRunning) {
+        rafLoopRunning = true;
+        window.requestAnimationFrame(predictLoopFallback);
+    }
+}
 
 function renderFrame(timestampMs) {
     const results = faceLandmarker.detectForVideo(video, timestampMs);
@@ -497,19 +507,44 @@ function drawGlow(w, h, timeSec) {
     ctx.restore();
 }
 
+// パーティクル
+const GLOW_SPRITE_SIZE = 128;
+function createGlowSprite() {
+    const spriteCanvas = document.createElement('canvas');
+    spriteCanvas.width = GLOW_SPRITE_SIZE;
+    spriteCanvas.height = GLOW_SPRITE_SIZE;
+    const spriteCtx = spriteCanvas.getContext('2d');
+    const r = GLOW_SPRITE_SIZE / 2;
+    const gradient = spriteCtx.createRadialGradient(r, r, 0, r, r, r);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.4, 'rgba(255,255,255,0.55)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    spriteCtx.fillStyle = gradient;
+    spriteCtx.beginPath();
+    spriteCtx.arc(r, r, r, 0, Math.PI * 2);
+    spriteCtx.fill();
+    return spriteCanvas;
+}
+const glowSprite = createGlowSprite();
+
+// モバイル用
+const IS_LOW_POWER_DEVICE = matchMedia('(pointer: coarse)').matches;
+const EFFECTIVE_ORB_COUNT = IS_LOW_POWER_DEVICE ? Math.round(ORB_COUNT * 0.75) : ORB_COUNT;
+const EFFECTIVE_STAR_COUNT = IS_LOW_POWER_DEVICE ? Math.round(STAR_COUNT * 0.6) : STAR_COUNT;
+
 // 大きい玉の処理
 let orbs = null;
 let orbsW = 0;
 let orbsH = 0;
 
 function createOrbs(w, h) {
-    const cols = Math.max(1, Math.round(Math.sqrt(ORB_COUNT * (w / h))));
-    const rows = Math.max(1, Math.ceil(ORB_COUNT / cols));
+    const cols = Math.max(1, Math.round(Math.sqrt(EFFECTIVE_ORB_COUNT * (w / h))));
+    const rows = Math.max(1, Math.ceil(EFFECTIVE_ORB_COUNT / cols));
     const cellW = w / cols;
     const cellH = h / rows;
 
     const list = [];
-    for (let idx = 0; idx < ORB_COUNT; idx++) {
+    for (let idx = 0; idx < EFFECTIVE_ORB_COUNT; idx++) {
         const col = idx % cols;
         const row = Math.floor(idx / cols) % rows;
         const cellCx = (col + 0.5) * cellW;
@@ -565,15 +600,9 @@ function updateAndDrawOrbs(w, h, timeSec) {
         const alphaBase = ORB_MAX_ALPHA * orb.alphaVariance;
         const alpha = alphaBase * (ORB_MIN_ALPHA_RATIO + (1 - ORB_MIN_ALPHA_RATIO) * twinkle);
         const size = orb.sizeRatio * minSide;
-        const gradient = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, size);
-        gradient.addColorStop(0, `rgba(255,255,255,${alpha.toFixed(3)})`);
-        gradient.addColorStop(0.4, `rgba(255,255,255,${(alpha * 0.55).toFixed(3)})`);
-        gradient.addColorStop(1, 'rgba(255,255,255,0)');
 
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(orb.x, orb.y, size, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(glowSprite, orb.x - size, orb.y - size, size * 2, size * 2);
     }
 
     ctx.restore();
@@ -591,7 +620,7 @@ function createStar() {
     };
 }
 
-const stars = Array.from({ length: STAR_COUNT }, createStar);
+const stars = Array.from({ length: EFFECTIVE_STAR_COUNT }, createStar);
 let lastStarTimeSec = 0;
 
 function updateAndDrawStars(w, h, timeSec) {
@@ -627,15 +656,10 @@ function updateAndDrawStars(w, h, timeSec) {
         if (alpha <= 0.01) continue;
 
         const size = Math.max(0.4, STAR_BASE_SIZE * scale * 0.12);
+        const drawSize = size * 8; // 直径
 
-        const gradient = ctx.createRadialGradient(sx, sy, 0, sx, sy, size * 4);
-        gradient.addColorStop(0, `rgba(255,255,255,${alpha.toFixed(3)})`);
-        gradient.addColorStop(1, 'rgba(255,255,255,0)');
-
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(sx, sy, size * 4, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(glowSprite, sx - drawSize / 2, sy - drawSize / 2, drawSize, drawSize);
     }
 
     ctx.restore();

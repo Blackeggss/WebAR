@@ -14,10 +14,13 @@ html, body {
 }
 
 #webcam {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
   pointer-events: none;
 }
 
@@ -30,6 +33,7 @@ html, body {
   object-fit: contain;
   background-color: #000;
   display: block;
+  z-index: 1;
 }
 
 /* カメラ */

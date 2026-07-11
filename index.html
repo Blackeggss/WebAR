@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <title>WebAR</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
+</head>
+<body>
+
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="output_canvas"></canvas>
+
+    <div id="camera_controls">
+        <!-- シャッターボタン -->
+        <button id="shutter_btn" aria-label="撮影する">
+            <span class="shutter_inner"></span>
+        </button>
+
+        <!-- カメラ切り替えボタン -->
+        <button id="switch_camera_btn" aria-label="カメラを切り替える">
+            <span class="material-symbols-outlined switch_icon">cameraswitch</span>
+        </button>
+    </div>
+
+    <!-- PC専用カメラ選択 -->
+    <div id="camera_picker" hidden>
+        <div id="camera_picker_title">カメラを選択</div>
+        <ul id="camera_picker_list"></ul>
+    </div>
+
+    <!-- シャッター時フラッシュ -->
+    <div id="flash_overlay"></div>
+
+    <!-- トースト -->
+    <div id="toast"></div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

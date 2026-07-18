@@ -3,7 +3,7 @@ import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@m
 
 const video = document.getElementById('webcam');
 const outputCanvas = document.getElementById('output_canvas');
-const ctx = outputCanvas.getContext('2d');
+const ctx = outputCanvas.getContext('2d', { alpha: false });
 const arCanvas = document.createElement('canvas');
 const shutterBtn = document.getElementById('shutter_btn');
 const switchCameraBtn = document.getElementById('switch_camera_btn');
@@ -62,13 +62,10 @@ let slotActive = new Array(MAX_FACES).fill(false);
 // 3D空間の初期化
 function initThree() {
     scene = new THREE.Scene();
-    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-
     camera = new THREE.PerspectiveCamera(VIRTUAL_CAMERA_VERTICAL_FOV, 1, NEAR, FAR);
     camera.position.set(0, 0, 0);
     camera.lookAt(0, 0, -1);
-
-    renderer = new THREE.WebGLRenderer({ canvas: arCanvas, alpha: true, antialias: true });
+    renderer = new THREE.WebGLRenderer({ canvas: arCanvas, alpha: true, antialias: false });
     renderer.setPixelRatio(1);
 
     // モバイル用
@@ -82,6 +79,9 @@ function initThree() {
     const textureLoader = new THREE.TextureLoader();
     const maskTexture = textureLoader.load('assets/base.png');
     maskTexture.colorSpace = THREE.SRGBColorSpace;
+    maskTexture.generateMipmaps = false;
+    maskTexture.minFilter = THREE.LinearFilter;
+    maskTexture.magFilter = THREE.LinearFilter;
 
     const geometry = new THREE.PlaneGeometry(MASK_WIDTH, MASK_HEIGHT);
     const material = new THREE.MeshBasicMaterial({
@@ -112,7 +112,7 @@ async function initializeFaceLandmarker() {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
             delegate: "GPU"
         },
-        outputFaceBlendshapes: true,
+        outputFaceBlendshapes: false,
         outputFacialTransformationMatrixes: true,
         runningMode: runningMode,
         numFaces: MAX_FACES

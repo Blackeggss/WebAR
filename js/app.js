@@ -314,7 +314,10 @@ let rafLoopRunning = false;
 
 function startFrameLoop() {
     if (video.requestVideoFrameCallback) {
-        video.requestVideoFrameCallback(onVideoFrame);
+        if (!vfcLoopStarted) {
+            vfcLoopStarted = true;
+            video.requestVideoFrameCallback(onVideoFrame);
+        }
     } else if (!rafLoopRunning) {
         rafLoopRunning = true;
         window.requestAnimationFrame(predictLoopFallback);

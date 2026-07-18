@@ -352,6 +352,17 @@ function startFrameLoop() {
     }
 }
 
+// タイムスタンプエラーの回避
+let lastFedTimestampMs = -1;
+function nextMonotonicTimestampMs() {
+    let t = performance.now();
+    if (t <= lastFedTimestampMs) {
+        t = lastFedTimestampMs + 1;
+    }
+    lastFedTimestampMs = t;
+    return t;
+}
+
 function renderFrame(timestampMs) {
     const results = faceLandmarker.detectForVideo(video, timestampMs);
     applyResults(results, timestampMs);
@@ -361,7 +372,7 @@ function renderFrame(timestampMs) {
 
 function onVideoFrame(_now, metadata) {
     try {
-        renderFrame(metadata.mediaTime * 1000);
+        renderFrame(nextMonotonicTimestampMs());
     } catch (err) {
         console.error("フレーム描画中にエラーが発生しました: ", err);
     }
@@ -373,7 +384,7 @@ function predictLoopFallback() {
     if (video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
         try {
-            renderFrame(performance.now());
+            renderFrame(nextMonotonicTimestampMs());
         } catch (err) {
             console.error("フレーム描画中にエラーが発生しました: ", err);
         }

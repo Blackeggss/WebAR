@@ -104,23 +104,25 @@ function initThree() {
 // MediaPipe Tasks API
 async function initializeFaceLandmarker() {
     initThree();
+    const modelPromise = (async () => {
+        const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm"
+        );
 
-    const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm"
-    );
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+                modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+                delegate: "GPU"
+            },
+            outputFaceBlendshapes: false,
+            outputFacialTransformationMatrixes: true,
+            runningMode: runningMode,
+            numFaces: MAX_FACES
+        });
+    })();
 
-    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-        baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            delegate: "GPU"
-        },
-        outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: true,
-        runningMode: runningMode,
-        numFaces: MAX_FACES
-    });
-
-    startCamera();
+    const cameraPromise = startCamera();
+    await Promise.all([modelPromise, cameraPromise]);
 }
 
 const isMobile = matchMedia('(pointer: coarse)').matches;
@@ -337,8 +339,10 @@ function nextMonotonicTimestampMs() {
 }
 
 function renderFrame(timestampMs) {
-    const results = faceLandmarker.detectForVideo(video, timestampMs);
-    applyResults(results, timestampMs);
+    if (faceLandmarker) {
+        const results = faceLandmarker.detectForVideo(video, timestampMs);
+        applyResults(results, timestampMs);
+    }
     renderer.render(scene, camera);
     renderComposite(outputCanvas.width, outputCanvas.height, timestampMs / 1000);
 }

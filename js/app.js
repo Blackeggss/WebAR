@@ -11,7 +11,7 @@ const cameraPicker = document.getElementById('camera_picker');
 const cameraPickerList = document.getElementById('camera_picker_list');
 const flashOverlay = document.getElementById('flash_overlay');
 const toastEl = document.getElementById('toast');
-
+const arLoadingEl = document.getElementById('ar_loading');
 let faceLandmarker;
 let runningMode = "VIDEO";
 let vfcLoopStarted = false;
@@ -102,6 +102,18 @@ function initThree() {
 }
 
 // MediaPipe Tasks API
+let modelReady = false;
+
+function showArLoading() {
+    if (modelReady) return;
+    arLoadingEl.classList.add('ar_loading-show');
+}
+
+function hideArLoading() {
+    modelReady = true;
+    arLoadingEl.classList.remove('ar_loading-show');
+}
+
 async function initializeFaceLandmarker() {
     initThree();
     const modelPromise = (async () => {
@@ -119,6 +131,7 @@ async function initializeFaceLandmarker() {
             runningMode: runningMode,
             numFaces: MAX_FACES
         });
+        hideArLoading();
     })();
 
     const cameraPromise = startCamera();
@@ -164,6 +177,7 @@ function startCamera() {
                 camera.aspect = videoWidth / videoHeight;
                 camera.updateProjectionMatrix();
                 startFrameLoop();
+                showArLoading();
                 resolve();
             }, { once: true });
         });

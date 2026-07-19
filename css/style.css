@@ -179,6 +179,45 @@ html, body {
   }
 }
 
+/* ローディング表示 */
+#ar_loading {
+  position: fixed;
+  left: 50%;
+  top: max(24px, env(safe-area-inset-top, 24px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  font-size: 13px;
+  z-index: 45;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+#ar_loading.ar_loading-show {
+  opacity: 1;
+}
+
+.ar_loading_spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  animation: arLoadingSpin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes arLoadingSpin {
+  to { transform: rotate(360deg); }
+}
+
 /* シャッター時フラッシュ */
 #flash_overlay {
   position: fixed;

@@ -211,6 +211,7 @@ function startCamera() {
                 camera.updateProjectionMatrix();
                 startFrameLoop();
                 showArLoading();
+                showToast(`raw:${videoWidth}x${videoHeight} rot:${needsRotationCorrection} canvas:${canvasWidth}x${canvasHeight}`);
                 resolve();
             }, { once: true });
         });

@@ -520,15 +520,20 @@ function renderComposite(w, h, timeSec) {
     if (needsRotationCorrection) {
         ctx.translate(w / 2, h / 2);
         ctx.rotate((ROTATION_CORRECTION_DEG * Math.PI) / 180);
-        ctx.translate(-rawVideoWidth / 2, -rawVideoHeight / 2);
-    }
-    if (currentFacingMode === 'user') {
-        ctx.translate(rawVideoWidth, 0);
-        ctx.scale(-1, 1);
+        if (currentFacingMode === 'user') {
+            ctx.scale(1, -1);
+        }
+        ctx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2, rawVideoWidth, rawVideoHeight);
+        ctx.drawImage(arCanvas, -rawVideoWidth / 2, -rawVideoHeight / 2, rawVideoWidth, rawVideoHeight);
+    } else {
+        if (currentFacingMode === 'user') {
+            ctx.translate(w, 0);
+            ctx.scale(-1, 1);
+        }
+        ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
+        ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
     }
 
-    ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
-    ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
     ctx.restore();
 }
 

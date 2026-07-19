@@ -156,6 +156,24 @@ function getVideoConstraints() {
         ? { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } }
         : { facingMode: currentFacingMode, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } };
 }
+function getOutputCanvasSize(dispWidth, dispHeight) {
+    if (!isMobile) {
+        return { width: dispWidth, height: dispHeight };
+    }
+
+    const targetRatio = landscapeMql.matches ? 4 / 3 : 3 / 4;
+    const currentRatio = dispWidth / dispHeight;
+
+    if (currentRatio > targetRatio) {
+        const height = dispHeight;
+        const width = Math.round(height * targetRatio);
+        return { width, height };
+    } else {
+        const width = dispWidth;
+        const height = Math.round(width / targetRatio);
+        return { width, height };
+    }
+}
 
 function startCamera() {
     const videoConstraints = getVideoConstraints();
@@ -178,13 +196,12 @@ function startCamera() {
                 rawVideoWidth = videoWidth;
                 rawVideoHeight = videoHeight;
 
-                if (needsRotationCorrection) {
-                    outputCanvas.width = videoHeight;
-                    outputCanvas.height = videoWidth;
-                } else {
-                    outputCanvas.width = videoWidth;
-                    outputCanvas.height = videoHeight;
-                }
+                const dispWidth = needsRotationCorrection ? videoHeight : videoWidth;
+                const dispHeight = needsRotationCorrection ? videoWidth : videoHeight;
+                const { width: canvasWidth, height: canvasHeight } = getOutputCanvasSize(dispWidth, dispHeight);
+
+                outputCanvas.width = canvasWidth;
+                outputCanvas.height = canvasHeight;
 
                 arCanvas.width = videoWidth;
                 arCanvas.height = videoHeight;

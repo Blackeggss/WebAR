@@ -519,7 +519,7 @@ function renderComposite(w, h, timeSec) {
 
     if (needsRotationCorrection) {
         ctx.translate(w / 2, h / 2);
-        ctx.rotate((ROTATION_CORRECTION_DEG * Math.PI) / 180);
+        ctx.rotate((90 * Math.PI) / 180);
         if (currentFacingMode === 'user') {
             ctx.scale(1, -1);
         }

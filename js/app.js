@@ -14,6 +14,8 @@ const toastEl = document.getElementById('toast');
 
 let faceLandmarker;
 let runningMode = "VIDEO";
+let vfcLoopStarted = false;
+let rafLoopRunning = false;
 let currentFacingMode = 'user';
 let currentStream = null;
 let selectedDeviceId = null;
@@ -310,7 +312,6 @@ async function selectCamera(deviceId) {
 }
 
 // 検出・合成
-let rafLoopRunning = false;
 
 function startFrameLoop() {
     if (video.requestVideoFrameCallback) {

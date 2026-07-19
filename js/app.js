@@ -19,6 +19,10 @@ let rafLoopRunning = false;
 let currentFacingMode = 'user';
 let currentStream = null;
 let selectedDeviceId = null;
+let needsRotationCorrection = false;
+let rawVideoWidth = 0;
+let rawVideoHeight = 0;
+const ROTATION_CORRECTION_DEG = 90;
 
 // マスクサイズ
 const MASK_WIDTH = 1024 / 480 * 20;
@@ -143,14 +147,14 @@ const landscapeMql = matchMedia('(orientation: landscape)');
 
 function getVideoConstraints() {
     if (!isMobile) {
-        const base = { width: { ideal: 1280 }, height: { ideal: 720 } };
+        const base = { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 16 / 9 } };
         return selectedDeviceId
             ? { deviceId: { exact: selectedDeviceId }, ...base }
             : { facingMode: currentFacingMode, ...base };
     }
     return landscapeMql.matches
-        ? { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }
-        : { facingMode: currentFacingMode, width: { ideal: 1080 }, height: { ideal: 1920 } };
+        ? { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } }
+        : { facingMode: currentFacingMode, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } };
 }
 
 function startCamera() {
@@ -167,8 +171,20 @@ function startCamera() {
             video.addEventListener("loadeddata", () => {
                 const videoWidth = video.videoWidth;
                 const videoHeight = video.videoHeight;
-                outputCanvas.width = videoWidth;
-                outputCanvas.height = videoHeight;
+                const expectedPortrait = isMobile && !landscapeMql.matches;
+                const actualPortrait = videoHeight >= videoWidth;
+                needsRotationCorrection = expectedPortrait !== actualPortrait;
+
+                rawVideoWidth = videoWidth;
+                rawVideoHeight = videoHeight;
+
+                if (needsRotationCorrection) {
+                    outputCanvas.width = videoHeight;
+                    outputCanvas.height = videoWidth;
+                } else {
+                    outputCanvas.width = videoWidth;
+                    outputCanvas.height = videoHeight;
+                }
 
                 arCanvas.width = videoWidth;
                 arCanvas.height = videoHeight;
@@ -482,12 +498,19 @@ function applyResults(results, timestampMs) {
 function renderComposite(w, h, timeSec) {
     ctx.clearRect(0, 0, w, h);
     ctx.save();
+
+    if (needsRotationCorrection) {
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate((ROTATION_CORRECTION_DEG * Math.PI) / 180);
+        ctx.translate(-rawVideoWidth / 2, -rawVideoHeight / 2);
+    }
     if (currentFacingMode === 'user') {
-        ctx.translate(w, 0);
+        ctx.translate(rawVideoWidth, 0);
         ctx.scale(-1, 1);
     }
-    ctx.drawImage(video, 0, 0, w, h);
-    ctx.drawImage(arCanvas, 0, 0, w, h);
+
+    ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
+    ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
     ctx.restore();
 }
 

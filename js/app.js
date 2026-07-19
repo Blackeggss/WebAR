@@ -22,7 +22,7 @@ let selectedDeviceId = null;
 let needsRotationCorrection = false;
 let rawVideoWidth = 0;
 let rawVideoHeight = 0;
-const ROTATION_CORRECTION_DEG = 90;
+const ROTATION_CORRECTION_DEG = 0;
 
 // マスクサイズ
 const MASK_WIDTH = 1024 / 480 * 20;

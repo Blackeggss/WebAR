@@ -186,8 +186,10 @@ const ROTATION_CW_ANGLES = [270];
 const ROTATION_CCW_ANGLES = [90];
 
 const GAMMA_SIGN = 1;
-const GAMMA_ENTER_THRESHOLD = 50; // 度: これを超えたら横向きと判定する
-const GAMMA_EXIT_THRESHOLD = 35;  // 度: ここを下回ったら縦向きに戻す(チラつき防止のヒステリシス)
+// iPhone純正の回転タイミング(体感で約25度前後)に合わせた近似値
+// ※Appleは正確な閾値を公開していないため、実機の感触に合わせて微調整してください
+const GAMMA_ENTER_THRESHOLD = 25; // 度: これを超えたら横向きと判定する
+const GAMMA_EXIT_THRESHOLD = 20;  // 度: ここを下回ったら縦向きに戻す(チラつき防止のヒステリシス)
 
 let gammaAvailable = false;
 let latestGamma = 0;
@@ -229,10 +231,10 @@ function computeRotationState() {
 
 function updateOutputCanvasSize() {
     if (!rawVideoWidth || !rawVideoHeight) return;
-    const rotated = rotationState !== 'none';
-    const dispWidth = rotated ? rawVideoHeight : rawVideoWidth;
-    const dispHeight = rotated ? rawVideoWidth : rawVideoHeight;
-    const { width, height } = getOutputCanvasSize(dispWidth, dispHeight);
+    // 実際の描画(renderComposite)は元映像を無回転のまま中央クロップして敷き詰めるだけなので、
+    // ここでは元映像のネイティブ寸法をそのまま渡す(縦横を入れ替えない)。
+    // rotationStateによる縦横比の切り替えはgetOutputCanvasSize内のtargetRatioが担う。
+    const { width, height } = getOutputCanvasSize(rawVideoWidth, rawVideoHeight);
     outputCanvas.width = width;
     outputCanvas.height = height;
 }
@@ -597,12 +599,29 @@ function renderComposite(w, h, timeSec) {
     ctx.clearRect(0, 0, w, h);
     ctx.save();
 
+    // 出力キャンバスのアスペクト比に合わせて元映像(arCanvasも同じ座標系)を中央クロップし、
+    // キャンバス全体に等倍でスケールして敷き詰める(検出側のrawVideoWidth/Heightはそのまま利用)
+    const canvasRatio = w / h;
+    const videoRatio = rawVideoWidth / rawVideoHeight;
+    let sx, sy, sWidth, sHeight;
+    if (videoRatio > canvasRatio) {
+        sHeight = rawVideoHeight;
+        sWidth = sHeight * canvasRatio;
+        sx = (rawVideoWidth - sWidth) / 2;
+        sy = 0;
+    } else {
+        sWidth = rawVideoWidth;
+        sHeight = sWidth / canvasRatio;
+        sx = 0;
+        sy = (rawVideoHeight - sHeight) / 2;
+    }
+
     if (currentFacingMode === 'user') {
         ctx.translate(w, 0);
         ctx.scale(-1, 1);
     }
-    ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
-    ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
+    ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, w, h);
+    ctx.drawImage(arCanvas, sx, sy, sWidth, sHeight, 0, 0, w, h);
 
     ctx.restore();
 }

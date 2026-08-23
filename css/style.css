@@ -301,11 +301,11 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
 #orientation_check_icon {
   display: inline-flex;
-  animation: orientationCheckShake 1.4s ease-in-out infinite;
+  animation: orientationCheckShake 2s ease-in-out infinite;
 }
 
 @keyframes orientationCheckShake {
   0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-28deg); }
-  75% { transform: rotate(28deg); }
+  25% { transform: rotate(-90deg); }
+  75% { transform: rotate(90deg); }
 }

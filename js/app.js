@@ -262,19 +262,21 @@ function updateOutputCanvasSize() {
 
 // OSの画面ロック(回転ロック)がかかっていると、物理的に端末を回転させてもページのCSSレイアウト
 // (matchMediaのorientation)は変化しない。センサーは画面ロックと無関係に動き続けるため、
-// 「センサーは横向きを検知しているのにページは縦向きのまま(またはその逆)」という食い違いが
-// 一定時間続いたら画面ロック中と判定する。
+// 「実際に50度以上はっきり傾けた瞬間に、ページの向きが追従しているかどうか」を1回だけ見れば
+// ロックの有無を判定できる。追従していればロックなし、していなければロック中と即座に確定する
+// (追従の遅延待ちなどはしない)。
 //
 // この判定は起動直後に1回だけ行う(常時チェックし続けるとセンサー処理のコストがかかり続けるうえ、
 // ユーザーが実際に端末を回転させるまで判定が確定しないため)。起動時にオーバーレイでアニメーションと
-// 案内文を表示して軽く端末を傾けてもらい、判定が確定し次第オーバーレイを消して、
+// 案内文を表示して端末を傾けてもらい、判定が確定し次第オーバーレイを消して、
 // ロック中なら0度の状態に固定したまま以後は何もしない、ロックなしなら通常の追従動作に切り替える。
-const ORIENTATION_LOCK_DETECT_DELAY_MS = 600;
-const ORIENTATION_CHECK_TIMEOUT_MS = 2700; // 端末を傾けてもらえなかった場合のフォールバック(人が待てる3秒よりやや短く)
-let mismatchSinceMs = null;
+const ORIENTATION_LOCK_CHECK_ANGLE = 50; // この角度をはっきり超えた瞬間に一発判定する
+const ORIENTATION_CHECK_NUDGE_MS = 3000; // この時間、境界を超えなければ「もう少し傾けてください」を表示
+const ORIENTATION_CHECK_SAFETY_TIMEOUT_MS = 15000; // センサーが使えない等の異常時にオーバーレイが残り続けないための保険
 let orientationCheckDone = false;
 let lockedMode = false;
-let orientationCheckTimeoutId = null;
+let orientationCheckNudgeTimeoutId = null;
+let orientationCheckSafetyTimeoutId = null;
 
 function showOrientationCheckUI(text) {
     motionPermissionOverlay.hidden = false;
@@ -289,7 +291,8 @@ function finishOrientationCheck(locked) {
     if (orientationCheckDone) return;
     orientationCheckDone = true;
     lockedMode = locked;
-    clearTimeout(orientationCheckTimeoutId);
+    clearTimeout(orientationCheckNudgeTimeoutId);
+    clearTimeout(orientationCheckSafetyTimeoutId);
     hideOrientationCheckUI();
     if (locked && rotationState !== 'none') {
         rotationState = 'none';
@@ -298,31 +301,19 @@ function finishOrientationCheck(locked) {
     }
 }
 
-// 起動直後の1回だけ呼ばれる判定処理。センサーの結果とページの向きが一致すればロックなしと確定し、
-// 食い違いがORIENTATION_LOCK_DETECT_DELAY_MS続けばロック中と確定する。
+// 起動直後の1回だけ呼ばれる判定処理。50度をはっきり超えた瞬間に、ページの向きが追従していれば
+// ロックなし、していなければロック中と即座に確定する(待ち時間なし)。
 function runOrientationCheck() {
-    if (orientationCheckDone) return;
-    const candidate = computeRotationState();
-    const candidateIsSideways = candidate === 'cw' || candidate === 'ccw';
-    const matches = landscapeMql.matches;
+    if (orientationCheckDone || !rollAvailable) return;
+    if (Math.abs(latestRollDeg) < ORIENTATION_LOCK_CHECK_ANGLE) return;
 
-    if (candidateIsSideways && matches) {
-        rotationState = candidate;
+    if (landscapeMql.matches) {
+        rotationState = computeRotationState();
         document.documentElement.setAttribute('data-rotation', rotationState);
         updateOutputCanvasSize();
         finishOrientationCheck(false);
-        return;
-    }
-
-    const mismatched = candidateIsSideways !== matches;
-    if (mismatched) {
-        if (mismatchSinceMs === null) {
-            mismatchSinceMs = Date.now();
-        } else if (Date.now() - mismatchSinceMs >= ORIENTATION_LOCK_DETECT_DELAY_MS) {
-            finishOrientationCheck(true);
-        }
     } else {
-        mismatchSinceMs = null;
+        finishOrientationCheck(true);
     }
 }
 
@@ -460,29 +451,68 @@ const needsMotionPermission =
     (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') ||
     (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function');
 
+const ORIENTATION_CHECK_MAIN_TEXT = 'スマホを左右どちらかに\n90度まで傾けてください';
+const ORIENTATION_CHECK_NUDGE_TEXT = 'もう少し傾けてください';
+
 function beginOrientationCheck() {
+    showOrientationCheckUI(ORIENTATION_CHECK_MAIN_TEXT);
     startRotationSensors();
-    orientationCheckTimeoutId = setTimeout(() => finishOrientationCheck(false), ORIENTATION_CHECK_TIMEOUT_MS);
+    orientationCheckNudgeTimeoutId = setTimeout(() => {
+        if (!orientationCheckDone) {
+            motionPermissionText.textContent = ORIENTATION_CHECK_NUDGE_TEXT;
+        }
+    }, ORIENTATION_CHECK_NUDGE_MS);
+    orientationCheckSafetyTimeoutId = setTimeout(() => finishOrientationCheck(false), ORIENTATION_CHECK_SAFETY_TIMEOUT_MS);
+}
+
+function requestPermissionThenBeginCheck() {
+    requestMotionPermissions()
+        .then((results) => {
+            if (results.length > 0 && results.every((r) => r === 'granted')) {
+                beginOrientationCheck();
+            } else {
+                finishOrientationCheck(false);
+            }
+        })
+        .catch((err) => {
+            console.error("モーション許可の取得に失敗しました: ", err);
+            finishOrientationCheck(false);
+        });
+}
+
+function showTapToStartUI() {
+    showOrientationCheckUI('タップして開始');
+    motionPermissionOverlay.addEventListener('click', function onTapToStart() {
+        motionPermissionOverlay.removeEventListener('click', onTapToStart);
+        requestPermissionThenBeginCheck();
+    }, { once: true });
 }
 
 // カメラ許可が確定した(=getUserMediaが成功した)タイミングで呼ばれる。
-// 「タップして開始」という別フェーズは設けず、最初から傾けてもらう案内を表示する。
-// (iOSのみ、モーション許可の取得にタップが必要なためオーバーレイのタップで許可をリクエストする)
+//
+// iOSはモーション許可の取得に実際のタップ操作が必須(初回訪問時はタップなしで許可ダイアログを
+// 出すことができない)。ただし一度許可済みなら、タップなし(ユーザー操作なし)で
+// requestPermission()を呼んでも即座に'granted'で解決される。そこでまず静かに1回試し、
+// 既に許可済みならタップなしでそのまま検知に入る。未許可(主に初回訪問)の場合は、
+// タップが必要なことが伝わるよう「タップして開始」を表示してタップを待ち、
+// タップされたらモーション許可をリクエストしてから検知の表示・ロジックに入る。
 function onCameraReady() {
-    showOrientationCheckUI('スマホを軽く左右に傾けてください\n画面の向きを確認しています…');
-    if (needsMotionPermission) {
-        motionPermissionOverlay.addEventListener('click', function onTapToStart() {
-            motionPermissionOverlay.removeEventListener('click', onTapToStart);
-            requestMotionPermissions()
-                .then(() => beginOrientationCheck())
-                .catch((err) => {
-                    console.error("モーション許可の取得に失敗しました: ", err);
-                    finishOrientationCheck(false);
-                });
-        }, { once: true });
-    } else {
+    if (!needsMotionPermission) {
         beginOrientationCheck();
+        return;
     }
+
+    requestMotionPermissions()
+        .then((results) => {
+            if (results.length > 0 && results.every((r) => r === 'granted')) {
+                beginOrientationCheck();
+            } else {
+                showTapToStartUI();
+            }
+        })
+        .catch(() => {
+            showTapToStartUI();
+        });
 }
 
 if (isMobile) {

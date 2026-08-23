@@ -12,6 +12,7 @@ const cameraPickerList = document.getElementById('camera_picker_list');
 const flashOverlay = document.getElementById('flash_overlay');
 const toastEl = document.getElementById('toast');
 const arLoadingEl = document.getElementById('ar_loading');
+const motionPermissionOverlay = document.getElementById('motion_permission_overlay');
 let faceLandmarker;
 let runningMode = "VIDEO";
 let vfcLoopStarted = false;
@@ -176,9 +177,20 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
 }
 
 // 端末の物理的な回転方向 (時計回り/反時計回り) を検出する
-// ※実機で左右の対応が逆に感じる場合は下の2つの配列を入れ替えてください
+//
+// screen.orientation / window.orientation はOSが要約した回転状態のため、
+// 180度(上下逆さま)を経由する回転でOS側が古い値のまま固まることがある(特にiPhone)。
+// これを避けるため、生の加速度センサー(deviceorientationのgamma値)が使える場合はそちらを優先する。
+// ※実機で左右の対応が逆に感じる場合はGAMMA_SIGNを-1に、角度方式の場合は下の2配列を入れ替えてください
 const ROTATION_CW_ANGLES = [270];
 const ROTATION_CCW_ANGLES = [90];
+
+const GAMMA_SIGN = 1;
+const GAMMA_ENTER_THRESHOLD = 50; // 度: これを超えたら横向きと判定する
+const GAMMA_EXIT_THRESHOLD = 35;  // 度: ここを下回ったら縦向きに戻す(チラつき防止のヒステリシス)
+
+let gammaAvailable = false;
+let latestGamma = 0;
 
 function getScreenAngle() {
     if (screen.orientation && typeof screen.orientation.angle === 'number') {
@@ -190,7 +202,25 @@ function getScreenAngle() {
     return 0;
 }
 
+function computeRotationStateFromGamma(gamma, previous) {
+    const g = gamma * GAMMA_SIGN;
+    if (previous === 'cw') {
+        if (g < -GAMMA_ENTER_THRESHOLD) return 'ccw';
+        return g > GAMMA_EXIT_THRESHOLD ? 'cw' : 'none';
+    }
+    if (previous === 'ccw') {
+        if (g > GAMMA_ENTER_THRESHOLD) return 'cw';
+        return g < -GAMMA_EXIT_THRESHOLD ? 'ccw' : 'none';
+    }
+    if (g > GAMMA_ENTER_THRESHOLD) return 'cw';
+    if (g < -GAMMA_ENTER_THRESHOLD) return 'ccw';
+    return 'none';
+}
+
 function computeRotationState() {
+    if (gammaAvailable) {
+        return computeRotationStateFromGamma(latestGamma, rotationState);
+    }
     const angle = getScreenAngle();
     if (ROTATION_CW_ANGLES.includes(angle)) return 'cw';
     if (ROTATION_CCW_ANGLES.includes(angle)) return 'ccw';
@@ -265,6 +295,17 @@ function scheduleRotationUpdate() {
     rotationDebounceTimer = setTimeout(applyRotationState, 150);
 }
 
+function handleDeviceOrientation(event) {
+    if (typeof event.gamma !== 'number') return;
+    gammaAvailable = true;
+    latestGamma = event.gamma;
+    applyRotationState();
+}
+
+function startGammaTracking() {
+    window.addEventListener('deviceorientation', handleDeviceOrientation);
+}
+
 if (isMobile) {
     applyRotationState();
     if (screen.orientation && screen.orientation.addEventListener) {
@@ -273,6 +314,25 @@ if (isMobile) {
         window.addEventListener('orientationchange', scheduleRotationUpdate);
     }
     landscapeMql.addEventListener('change', scheduleRotationUpdate);
+
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        motionPermissionOverlay.hidden = false;
+        motionPermissionOverlay.addEventListener('click', function onTapToStart() {
+            motionPermissionOverlay.removeEventListener('click', onTapToStart);
+            DeviceOrientationEvent.requestPermission()
+                .then((result) => {
+                    if (result === 'granted') {
+                        startGammaTracking();
+                    }
+                })
+                .catch((err) => console.error("モーション許可の取得に失敗しました: ", err))
+                .finally(() => {
+                    motionPermissionOverlay.hidden = true;
+                });
+        }, { once: true });
+    } else if (typeof DeviceOrientationEvent !== 'undefined') {
+        startGammaTracking();
+    }
 }
 
 // カメラ切り替えボタン
@@ -537,23 +597,12 @@ function renderComposite(w, h, timeSec) {
     ctx.clearRect(0, 0, w, h);
     ctx.save();
 
-    if (rotationState === 'none') {
-        if (currentFacingMode === 'user') {
-            ctx.translate(w, 0);
-            ctx.scale(-1, 1);
-        }
-        ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
-        ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
-    } else {
-        const sign = rotationState === 'cw' ? 1 : -1;
-        ctx.translate(w / 2, h / 2);
-        ctx.rotate(sign * Math.PI / 2);
-        if (currentFacingMode === 'user') {
-            ctx.scale(-1, 1);
-        }
-        ctx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2, rawVideoWidth, rawVideoHeight);
-        ctx.drawImage(arCanvas, -rawVideoWidth / 2, -rawVideoHeight / 2, rawVideoWidth, rawVideoHeight);
+    if (currentFacingMode === 'user') {
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
     }
+    ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
+    ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
 
     ctx.restore();
 }

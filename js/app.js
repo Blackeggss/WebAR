@@ -311,8 +311,10 @@ function runOrientationCheck() {
         rotationState = computeRotationState();
         document.documentElement.setAttribute('data-rotation', rotationState);
         updateOutputCanvasSize();
+        showToast(`ロック解除 angle:${Math.round(latestRollDeg)} state:${rotationState} attr:${document.documentElement.getAttribute('data-rotation')}`);
         finishOrientationCheck(false);
     } else {
+        showToast(`ロック検出 angle:${Math.round(latestRollDeg)}`);
         finishOrientationCheck(true);
     }
 }
@@ -333,6 +335,7 @@ function applyRotationState() {
     rotationState = candidate;
     document.documentElement.setAttribute('data-rotation', rotationState);
     updateOutputCanvasSize();
+    showToast(`追従更新 angle:${Math.round(latestRollDeg)} state:${rotationState}`);
 }
 
 function startCamera() {

@@ -182,12 +182,25 @@ html[data-rotation="ccw"] #camera_controls {
   flex-direction: column;
 }
 
+html[data-rotation="flip"] #camera_controls {
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  top: max(28px, env(safe-area-inset-top, 28px));
+  transform: translateX(-50%);
+  flex-direction: row;
+}
+
 html[data-rotation="cw"] #switch_camera_btn .switch_icon {
   transform: rotate(-90deg);
 }
 
 html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   transform: rotate(90deg);
+}
+
+html[data-rotation="flip"] #switch_camera_btn .switch_icon {
+  transform: rotate(180deg);
 }
 
 /* ローディング表示 */

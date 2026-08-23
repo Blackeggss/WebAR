@@ -22,7 +22,7 @@ let currentStream = null;
 let selectedDeviceId = null;
 let rawVideoWidth = 0;
 let rawVideoHeight = 0;
-let rotationState = 'none'; // 'none' | 'cw' | 'ccw'
+let rotationState = 'none'; // 'none' | 'cw' | 'ccw' | 'flip'
 
 // マスクサイズ
 const MASK_WIDTH = 1024 / 480 * 20;
@@ -161,7 +161,7 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
         return { width: dispWidth, height: dispHeight };
     }
 
-    const isRotatedSideways = rotationState !== 'none';
+    const isRotatedSideways = rotationState === 'cw' || rotationState === 'ccw';
     const targetRatio = isRotatedSideways ? 4 / 3 : 3 / 4;
     const currentRatio = dispWidth / dispHeight;
 
@@ -176,7 +176,7 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
     }
 }
 
-// 端末の物理的な回転方向 (時計回り/反時計回り) を検出する
+// 端末の物理的な回転方向を検出する('none'=縦持ち / 'cw'=時計回り90度 / 'ccw'=反時計回り90度 / 'flip'=上下逆さま)
 //
 // screen.orientation / window.orientation はOSが要約した回転状態のため、
 // 180度(上下逆さま)を経由する回転でOS側が古い値のまま固まることがある(特にiPhone)。
@@ -187,12 +187,16 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
 // ※実機で左右の対応が逆に感じる場合はROLL_SIGN/GAMMA_SIGNを-1に、角度方式の場合は下の2配列を入れ替えてください
 const ROTATION_CW_ANGLES = [270];
 const ROTATION_CCW_ANGLES = [90];
+const ROTATION_FLIP_ANGLES = [180];
 
 const ROLL_SIGN = 1;
 const GAMMA_SIGN = 1;
-// iPhone純正と同じ45度で切り替える(ちらつき防止のためexitのみ少し内側に設定)
-const ROTATE_ENTER_THRESHOLD = 45; // 度: これを超えたら横向きと判定する
-const ROTATE_EXIT_THRESHOLD = 40;  // 度: ここを下回ったら縦向きに戻す(チラつき防止のヒステリシス)
+
+// 縦持ちを0度、時計回りを正として4分割 (-45〜45:縦, 45〜135:cw, 135〜180/-180〜-135:flip, -135〜-45:ccw)
+// HYSTERESISは境界付近でのちらつき防止用の最小限の遊び
+const ZONE_BOUNDARY_1 = 45;
+const ZONE_BOUNDARY_2 = 135;
+const HYSTERESIS = 5;
 
 let rollAvailable = false;
 let latestRollDeg = 0;
@@ -210,17 +214,24 @@ function getScreenAngle() {
 }
 
 function classifyAngle(angleDeg, previous) {
-    if (previous === 'cw') {
-        if (angleDeg < -ROTATE_ENTER_THRESHOLD) return 'ccw';
-        return angleDeg > ROTATE_EXIT_THRESHOLD ? 'cw' : 'none';
+    switch (previous) {
+        case 'cw':
+            if (angleDeg > ZONE_BOUNDARY_2 + HYSTERESIS) return 'flip';
+            if (angleDeg < ZONE_BOUNDARY_1 - HYSTERESIS) return 'none';
+            return 'cw';
+        case 'ccw':
+            if (angleDeg < -(ZONE_BOUNDARY_2 + HYSTERESIS)) return 'flip';
+            if (angleDeg > -(ZONE_BOUNDARY_1 - HYSTERESIS)) return 'none';
+            return 'ccw';
+        case 'flip':
+            if (angleDeg >= 0 && angleDeg < ZONE_BOUNDARY_2 - HYSTERESIS) return 'cw';
+            if (angleDeg < 0 && angleDeg > -(ZONE_BOUNDARY_2 - HYSTERESIS)) return 'ccw';
+            return 'flip';
+        default:
+            if (angleDeg > ZONE_BOUNDARY_1 + HYSTERESIS) return 'cw';
+            if (angleDeg < -(ZONE_BOUNDARY_1 + HYSTERESIS)) return 'ccw';
+            return 'none';
     }
-    if (previous === 'ccw') {
-        if (angleDeg > ROTATE_ENTER_THRESHOLD) return 'cw';
-        return angleDeg < -ROTATE_EXIT_THRESHOLD ? 'ccw' : 'none';
-    }
-    if (angleDeg > ROTATE_ENTER_THRESHOLD) return 'cw';
-    if (angleDeg < -ROTATE_ENTER_THRESHOLD) return 'ccw';
-    return 'none';
 }
 
 function computeRotationState() {
@@ -233,6 +244,7 @@ function computeRotationState() {
     const angle = getScreenAngle();
     if (ROTATION_CW_ANGLES.includes(angle)) return 'cw';
     if (ROTATION_CCW_ANGLES.includes(angle)) return 'ccw';
+    if (ROTATION_FLIP_ANGLES.includes(angle)) return 'flip';
     return 'none';
 }
 
@@ -307,12 +319,21 @@ function scheduleRotationUpdate() {
 // 重力ベクトル(画面のX/Y平面への投影)からロール角を求める。
 // 前後の傾き(pitch)を変えても、端末自身のZ軸(画面を貫く軸)まわりの回転(=ロール)には影響しないため、
 // 顔を画角に収めるために端末を前後に傾ける操作では誤検知しない。
+// 顔合わせのため端末をやや後ろに傾けて構えると重力のXY成分が小さくなり、
+// atan2の結果がノイズで揺れやすくなる(=縦のつもりでも左右に振れて見える原因)。
+// 平滑化(指数移動平均)とやや広めの無効化しきい値でこれを抑える。
+let smoothedAx = 0;
+let smoothedAy = 1;
+const ROLL_SMOOTHING = 0.15;
+
 function handleDeviceMotion(event) {
     const acc = event.accelerationIncludingGravity;
     if (!acc || typeof acc.x !== 'number' || typeof acc.y !== 'number') return;
-    if (Math.hypot(acc.x, acc.y) < 1) return; // ほぼ水平(画面が真上/真下)で向きが定義できない場合は無視
+    smoothedAx += (acc.x - smoothedAx) * ROLL_SMOOTHING;
+    smoothedAy += (acc.y - smoothedAy) * ROLL_SMOOTHING;
+    if (Math.hypot(smoothedAx, smoothedAy) < 2) return; // ほぼ水平(画面が真上/真下)で向きが定義できない場合は無視
     rollAvailable = true;
-    latestRollDeg = Math.atan2(acc.x * ROLL_SIGN, acc.y) * 180 / Math.PI;
+    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, smoothedAy) * 180 / Math.PI;
     applyRotationState();
 }
 

@@ -196,6 +196,10 @@ const GAMMA_SIGN = 1;
 // HYSTERESISは境界付近でのちらつき防止用の最小限の遊び
 const ZONE_BOUNDARY_1 = 45;
 const HYSTERESIS = 5;
+// atan2の出力は180度と-180度の境界で数値上不連続にジャンプする(実際の回転は連続している)。
+// 45〜135を通って180(-180)に達した場合は-135まで、-45〜-135を通って-180(180)に達した場合は135まで、
+// 同じ向きを維持したまま折り返しをまたげるようにする境界値。
+const ZONE_BOUNDARY_WRAP_HOLD = 135;
 
 let rollAvailable = false;
 let latestRollDeg = 0;
@@ -214,10 +218,14 @@ function getScreenAngle() {
 
 function classifyAngle(angleDeg, previous) {
     if (previous === 'cw') {
-        return angleDeg < ZONE_BOUNDARY_1 - HYSTERESIS ? 'none' : 'cw';
+        // 45〜180の通常域、または折り返し後の180(-180)〜-135は引き続きcwを維持
+        const inHoldZone = angleDeg >= ZONE_BOUNDARY_1 - HYSTERESIS || angleDeg <= -ZONE_BOUNDARY_WRAP_HOLD;
+        return inHoldZone ? 'cw' : 'none';
     }
     if (previous === 'ccw') {
-        return angleDeg > -(ZONE_BOUNDARY_1 - HYSTERESIS) ? 'none' : 'ccw';
+        // -45〜-180の通常域、または折り返し後の-180(180)〜135は引き続きccwを維持
+        const inHoldZone = angleDeg <= -(ZONE_BOUNDARY_1 - HYSTERESIS) || angleDeg >= ZONE_BOUNDARY_WRAP_HOLD;
+        return inHoldZone ? 'ccw' : 'none';
     }
     if (angleDeg > ZONE_BOUNDARY_1 + HYSTERESIS) return 'cw';
     if (angleDeg < -(ZONE_BOUNDARY_1 + HYSTERESIS)) return 'ccw';

@@ -255,10 +255,47 @@ function updateOutputCanvasSize() {
     outputCanvas.height = height;
 }
 
+// OSの画面ロック(回転ロック)がかかっていると、物理的に端末を回転させてもページのCSSレイアウト
+// (matchMediaのorientation)は変化しない。センサーは画面ロックと無関係に動き続けるため、
+// 「センサーは横向きを検知しているのにページは縦向きのまま(またはその逆)」という食い違いが
+// 一定時間続いたら画面ロック中と確定し、それ以降は回転処理を適用しない(現在の向きを維持する)。
+// ※OS側の通常の回転反映にも多少の遅延があるため、食い違い自体は毎回すぐには判定確定しない
+// (確定するまでは通常どおりセンサーの結果を即時反映するので、ロックなし時の速さは変わらない)。
+const ORIENTATION_LOCK_DETECT_DELAY_MS = 600;
+let mismatchSinceMs = null;
+let osOrientationLocked = false;
+
 function applyRotationState() {
-    const nextState = isMobile ? computeRotationState() : 'none';
-    if (nextState === rotationState) return;
-    rotationState = nextState;
+    if (!isMobile) {
+        if (rotationState !== 'none') {
+            rotationState = 'none';
+            document.documentElement.setAttribute('data-rotation', rotationState);
+            updateOutputCanvasSize();
+        }
+        return;
+    }
+
+    const candidate = computeRotationState();
+    const candidateIsSideways = candidate === 'cw' || candidate === 'ccw';
+    const mismatched = candidateIsSideways !== landscapeMql.matches;
+
+    if (mismatched) {
+        if (mismatchSinceMs === null) {
+            mismatchSinceMs = Date.now();
+        } else if (!osOrientationLocked && Date.now() - mismatchSinceMs >= ORIENTATION_LOCK_DETECT_DELAY_MS) {
+            osOrientationLocked = true;
+        }
+    } else {
+        mismatchSinceMs = null;
+        osOrientationLocked = false;
+    }
+
+    if (osOrientationLocked) {
+        return; // 画面ロック中とみなし、現在の向きを維持したまま何もしない
+    }
+
+    if (candidate === rotationState) return;
+    rotationState = candidate;
     document.documentElement.setAttribute('data-rotation', rotationState);
     updateOutputCanvasSize();
 }

@@ -22,7 +22,7 @@ let currentStream = null;
 let selectedDeviceId = null;
 let rawVideoWidth = 0;
 let rawVideoHeight = 0;
-let rotationState = 'none'; // 'none' | 'cw' | 'ccw' | 'flip'
+let rotationState = 'none'; // 'none' | 'cw' | 'ccw'
 
 // マスクサイズ
 const MASK_WIDTH = 1024 / 480 * 20;
@@ -161,7 +161,7 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
         return { width: dispWidth, height: dispHeight };
     }
 
-    const isRotatedSideways = rotationState === 'cw' || rotationState === 'ccw';
+    const isRotatedSideways = rotationState !== 'none';
     const targetRatio = isRotatedSideways ? 4 / 3 : 3 / 4;
     const currentRatio = dispWidth / dispHeight;
 
@@ -176,7 +176,8 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
     }
 }
 
-// 端末の物理的な回転方向を検出する('none'=縦持ち / 'cw'=時計回り90度 / 'ccw'=反時計回り90度 / 'flip'=上下逆さま)
+// 端末の物理的な回転方向を検出する('none'=縦持ち / 'cw'=時計回り(45〜180度) / 'ccw'=反時計回り(-45〜-180度))
+// 135〜180度/-135〜-180度(上下逆さま付近)は独立した状態を持たず、直前のcw/ccwの位置を維持する
 //
 // screen.orientation / window.orientation はOSが要約した回転状態のため、
 // 180度(上下逆さま)を経由する回転でOS側が古い値のまま固まることがある(特にiPhone)。
@@ -187,15 +188,13 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
 // ※実機で左右の対応が逆に感じる場合はROLL_SIGN/GAMMA_SIGNを-1に、角度方式の場合は下の2配列を入れ替えてください
 const ROTATION_CW_ANGLES = [270];
 const ROTATION_CCW_ANGLES = [90];
-const ROTATION_FLIP_ANGLES = [180];
 
 const ROLL_SIGN = 1;
 const GAMMA_SIGN = 1;
 
-// 縦持ちを0度、時計回りを正として4分割 (-45〜45:縦, 45〜135:cw, 135〜180/-180〜-135:flip, -135〜-45:ccw)
+// 縦持ちを0度、時計回りを正として3分割 (-45〜45:縦, 45〜180:cw, -45〜-180:ccw)
 // HYSTERESISは境界付近でのちらつき防止用の最小限の遊び
 const ZONE_BOUNDARY_1 = 45;
-const ZONE_BOUNDARY_2 = 135;
 const HYSTERESIS = 5;
 
 let rollAvailable = false;
@@ -214,24 +213,15 @@ function getScreenAngle() {
 }
 
 function classifyAngle(angleDeg, previous) {
-    switch (previous) {
-        case 'cw':
-            if (angleDeg > ZONE_BOUNDARY_2 + HYSTERESIS) return 'flip';
-            if (angleDeg < ZONE_BOUNDARY_1 - HYSTERESIS) return 'none';
-            return 'cw';
-        case 'ccw':
-            if (angleDeg < -(ZONE_BOUNDARY_2 + HYSTERESIS)) return 'flip';
-            if (angleDeg > -(ZONE_BOUNDARY_1 - HYSTERESIS)) return 'none';
-            return 'ccw';
-        case 'flip':
-            if (angleDeg >= 0 && angleDeg < ZONE_BOUNDARY_2 - HYSTERESIS) return 'cw';
-            if (angleDeg < 0 && angleDeg > -(ZONE_BOUNDARY_2 - HYSTERESIS)) return 'ccw';
-            return 'flip';
-        default:
-            if (angleDeg > ZONE_BOUNDARY_1 + HYSTERESIS) return 'cw';
-            if (angleDeg < -(ZONE_BOUNDARY_1 + HYSTERESIS)) return 'ccw';
-            return 'none';
+    if (previous === 'cw') {
+        return angleDeg < ZONE_BOUNDARY_1 - HYSTERESIS ? 'none' : 'cw';
     }
+    if (previous === 'ccw') {
+        return angleDeg > -(ZONE_BOUNDARY_1 - HYSTERESIS) ? 'none' : 'ccw';
+    }
+    if (angleDeg > ZONE_BOUNDARY_1 + HYSTERESIS) return 'cw';
+    if (angleDeg < -(ZONE_BOUNDARY_1 + HYSTERESIS)) return 'ccw';
+    return 'none';
 }
 
 function computeRotationState() {
@@ -244,7 +234,6 @@ function computeRotationState() {
     const angle = getScreenAngle();
     if (ROTATION_CW_ANGLES.includes(angle)) return 'cw';
     if (ROTATION_CCW_ANGLES.includes(angle)) return 'ccw';
-    if (ROTATION_FLIP_ANGLES.includes(angle)) return 'flip';
     return 'none';
 }
 

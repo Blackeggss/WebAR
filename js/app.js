@@ -139,7 +139,11 @@ async function initializeFaceLandmarker() {
         hideArLoading();
     })();
 
-    const cameraPromise = startCamera();
+    const cameraPromise = startCamera().then(() => {
+        if (isMobile) {
+            onCameraReady();
+        }
+    });
     await Promise.all([modelPromise, cameraPromise]);
 }
 
@@ -266,7 +270,7 @@ function updateOutputCanvasSize() {
 // 案内文を表示して軽く端末を傾けてもらい、判定が確定し次第オーバーレイを消して、
 // ロック中なら0度の状態に固定したまま以後は何もしない、ロックなしなら通常の追従動作に切り替える。
 const ORIENTATION_LOCK_DETECT_DELAY_MS = 600;
-const ORIENTATION_CHECK_TIMEOUT_MS = 4000; // 端末を傾けてもらえなかった場合のフォールバック
+const ORIENTATION_CHECK_TIMEOUT_MS = 2700; // 端末を傾けてもらえなかった場合のフォールバック(人が待てる3秒よりやや短く)
 let mismatchSinceMs = null;
 let orientationCheckDone = false;
 let lockedMode = false;
@@ -457,21 +461,16 @@ const needsMotionPermission =
     (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function');
 
 function beginOrientationCheck() {
-    showOrientationCheckUI('スマホを軽く左右に傾けてください\n画面の向きを確認しています…');
     startRotationSensors();
     orientationCheckTimeoutId = setTimeout(() => finishOrientationCheck(false), ORIENTATION_CHECK_TIMEOUT_MS);
 }
 
-if (isMobile) {
-    if (screen.orientation && screen.orientation.addEventListener) {
-        screen.orientation.addEventListener('change', scheduleRotationUpdate);
-    } else {
-        window.addEventListener('orientationchange', scheduleRotationUpdate);
-    }
-    landscapeMql.addEventListener('change', scheduleRotationUpdate);
-
+// カメラ許可が確定した(=getUserMediaが成功した)タイミングで呼ばれる。
+// 「タップして開始」という別フェーズは設けず、最初から傾けてもらう案内を表示する。
+// (iOSのみ、モーション許可の取得にタップが必要なためオーバーレイのタップで許可をリクエストする)
+function onCameraReady() {
+    showOrientationCheckUI('スマホを軽く左右に傾けてください\n画面の向きを確認しています…');
     if (needsMotionPermission) {
-        showOrientationCheckUI('タップして開始');
         motionPermissionOverlay.addEventListener('click', function onTapToStart() {
             motionPermissionOverlay.removeEventListener('click', onTapToStart);
             requestMotionPermissions()
@@ -484,6 +483,15 @@ if (isMobile) {
     } else {
         beginOrientationCheck();
     }
+}
+
+if (isMobile) {
+    if (screen.orientation && screen.orientation.addEventListener) {
+        screen.orientation.addEventListener('change', scheduleRotationUpdate);
+    } else {
+        window.addEventListener('orientationchange', scheduleRotationUpdate);
+    }
+    landscapeMql.addEventListener('change', scheduleRotationUpdate);
 }
 
 // カメラ切り替えボタン

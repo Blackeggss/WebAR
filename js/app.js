@@ -333,7 +333,9 @@ function handleDeviceMotion(event) {
     smoothedAy += (acc.y - smoothedAy) * ROLL_SMOOTHING;
     if (Math.hypot(smoothedAx, smoothedAy) < 2) return; // ほぼ水平(画面が真上/真下)で向きが定義できない場合は無視
     rollAvailable = true;
-    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, smoothedAy) * 180 / Math.PI;
+    // 第2引数(Y)の符号を反転: 実機では「縦持ち(0度)」と「上下逆さま(180度)」が
+    // 逆に計算されていたため補正(左右cw/ccwの判定軸には影響しない)
+    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
     applyRotationState();
 }
 

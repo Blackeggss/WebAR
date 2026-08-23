@@ -282,16 +282,26 @@ function applyRotationState() {
     if (mismatched) {
         if (mismatchSinceMs === null) {
             mismatchSinceMs = Date.now();
+            showToast(`向き不一致検知 angle:${Math.round(latestRollDeg)} landscapeMql:${landscapeMql.matches}`);
         } else if (!osOrientationLocked && Date.now() - mismatchSinceMs >= ORIENTATION_LOCK_DETECT_DELAY_MS) {
             osOrientationLocked = true;
+            showToast('画面ロックを検出 → 0度に固定');
+            if (rotationState !== 'none') {
+                rotationState = 'none';
+                document.documentElement.setAttribute('data-rotation', rotationState);
+                updateOutputCanvasSize();
+            }
         }
     } else {
+        if (osOrientationLocked) {
+            showToast('画面ロック解除を検出');
+        }
         mismatchSinceMs = null;
         osOrientationLocked = false;
     }
 
     if (osOrientationLocked) {
-        return; // 画面ロック中とみなし、現在の向きを維持したまま何もしない
+        return; // 画面ロック中とみなし、0度の状態を維持したまま何もしない
     }
 
     if (candidate === rotationState) return;

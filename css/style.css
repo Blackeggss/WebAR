@@ -163,6 +163,33 @@ html, body {
   }
 }
 
+/* スマホ回転時のボタン位置 (JSがhtml要素にdata-rotationを付与) */
+html[data-rotation="cw"] #camera_controls {
+  left: max(28px, env(safe-area-inset-left, 28px));
+  right: auto;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: column;
+}
+
+html[data-rotation="ccw"] #camera_controls {
+  right: max(28px, env(safe-area-inset-right, 28px));
+  left: auto;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: column;
+}
+
+html[data-rotation="cw"] #switch_camera_btn .switch_icon {
+  transform: rotate(-90deg);
+}
+
+html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
+  transform: rotate(90deg);
+}
+
 /* ローディング表示 */
 #ar_loading {
   position: fixed;

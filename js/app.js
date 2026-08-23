@@ -21,6 +21,7 @@ let currentStream = null;
 let selectedDeviceId = null;
 let rawVideoWidth = 0;
 let rawVideoHeight = 0;
+let rotationState = 'none'; // 'none' | 'cw' | 'ccw'
 
 // マスクサイズ
 const MASK_WIDTH = 1024 / 480 * 20;
@@ -159,7 +160,8 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
         return { width: dispWidth, height: dispHeight };
     }
 
-    const targetRatio = landscapeMql.matches ? 4 / 3 : 3 / 4;
+    const isRotatedSideways = rotationState !== 'none';
+    const targetRatio = isRotatedSideways ? 4 / 3 : 3 / 4;
     const currentRatio = dispWidth / dispHeight;
 
     if (currentRatio > targetRatio) {
@@ -171,6 +173,46 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
         const height = Math.round(width / targetRatio);
         return { width, height };
     }
+}
+
+// 端末の物理的な回転方向 (時計回り/反時計回り) を検出する
+// ※実機で左右の対応が逆に感じる場合は下の2つの配列を入れ替えてください
+const ROTATION_CW_ANGLES = [270];
+const ROTATION_CCW_ANGLES = [90];
+
+function getScreenAngle() {
+    if (screen.orientation && typeof screen.orientation.angle === 'number') {
+        return screen.orientation.angle;
+    }
+    if (typeof window.orientation === 'number') {
+        return ((window.orientation % 360) + 360) % 360;
+    }
+    return 0;
+}
+
+function computeRotationState() {
+    const angle = getScreenAngle();
+    if (ROTATION_CW_ANGLES.includes(angle)) return 'cw';
+    if (ROTATION_CCW_ANGLES.includes(angle)) return 'ccw';
+    return 'none';
+}
+
+function updateOutputCanvasSize() {
+    if (!rawVideoWidth || !rawVideoHeight) return;
+    const rotated = rotationState !== 'none';
+    const dispWidth = rotated ? rawVideoHeight : rawVideoWidth;
+    const dispHeight = rotated ? rawVideoWidth : rawVideoHeight;
+    const { width, height } = getOutputCanvasSize(dispWidth, dispHeight);
+    outputCanvas.width = width;
+    outputCanvas.height = height;
+}
+
+function applyRotationState() {
+    const nextState = isMobile ? computeRotationState() : 'none';
+    if (nextState === rotationState) return;
+    rotationState = nextState;
+    document.documentElement.setAttribute('data-rotation', rotationState);
+    updateOutputCanvasSize();
 }
 
 function startCamera() {
@@ -191,10 +233,7 @@ function startCamera() {
                 rawVideoWidth = videoWidth;
                 rawVideoHeight = videoHeight;
 
-                const { width: canvasWidth, height: canvasHeight } = getOutputCanvasSize(videoWidth, videoHeight);
-
-                outputCanvas.width = canvasWidth;
-                outputCanvas.height = canvasHeight;
+                updateOutputCanvasSize();
 
                 arCanvas.width = videoWidth;
                 arCanvas.height = videoHeight;
@@ -204,7 +243,7 @@ function startCamera() {
                 camera.updateProjectionMatrix();
                 startFrameLoop();
                 showArLoading();
-                showToast(`raw:${videoWidth}x${videoHeight} canvas:${canvasWidth}x${canvasHeight}`);
+                showToast(`raw:${videoWidth}x${videoHeight} canvas:${outputCanvas.width}x${outputCanvas.height}`);
                 resolve();
             }, { once: true });
         });
@@ -218,6 +257,22 @@ function startCamera() {
         console.error("カメラの起動に失敗しました: ", err);
         throw err;
     });
+}
+
+let rotationDebounceTimer = null;
+function scheduleRotationUpdate() {
+    clearTimeout(rotationDebounceTimer);
+    rotationDebounceTimer = setTimeout(applyRotationState, 150);
+}
+
+if (isMobile) {
+    applyRotationState();
+    if (screen.orientation && screen.orientation.addEventListener) {
+        screen.orientation.addEventListener('change', scheduleRotationUpdate);
+    } else {
+        window.addEventListener('orientationchange', scheduleRotationUpdate);
+    }
+    landscapeMql.addEventListener('change', scheduleRotationUpdate);
 }
 
 // カメラ切り替えボタン
@@ -482,12 +537,23 @@ function renderComposite(w, h, timeSec) {
     ctx.clearRect(0, 0, w, h);
     ctx.save();
 
-    if (currentFacingMode === 'user') {
-        ctx.translate(w, 0);
-        ctx.scale(-1, 1);
+    if (rotationState === 'none') {
+        if (currentFacingMode === 'user') {
+            ctx.translate(w, 0);
+            ctx.scale(-1, 1);
+        }
+        ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
+        ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
+    } else {
+        const sign = rotationState === 'cw' ? 1 : -1;
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate(sign * Math.PI / 2);
+        if (currentFacingMode === 'user') {
+            ctx.scale(-1, 1);
+        }
+        ctx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2, rawVideoWidth, rawVideoHeight);
+        ctx.drawImage(arCanvas, -rawVideoWidth / 2, -rawVideoHeight / 2, rawVideoWidth, rawVideoHeight);
     }
-    ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
-    ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
 
     ctx.restore();
 }

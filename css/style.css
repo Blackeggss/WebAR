@@ -271,21 +271,41 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   transform: translateX(-50%) translateY(0);
 }
 
-/* モーション許可オーバーレイ */
+/* モーション許可 / 画面ロック判定オーバーレイ */
 #motion_permission_overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
   font-size: 16px;
+  text-align: center;
+  padding: 0 32px;
   -webkit-tap-highlight-color: transparent;
 }
 
 #motion_permission_overlay[hidden] {
   display: none;
+}
+
+#motion_permission_text {
+  white-space: pre-line;
+  line-height: 1.6;
+}
+
+#orientation_check_icon {
+  display: inline-flex;
+  animation: orientationCheckShake 1.4s ease-in-out infinite;
+}
+
+@keyframes orientationCheckShake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-28deg); }
+  75% { transform: rotate(28deg); }
 }

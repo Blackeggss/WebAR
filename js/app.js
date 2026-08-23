@@ -13,6 +13,7 @@ const flashOverlay = document.getElementById('flash_overlay');
 const toastEl = document.getElementById('toast');
 const arLoadingEl = document.getElementById('ar_loading');
 const motionPermissionOverlay = document.getElementById('motion_permission_overlay');
+const motionPermissionText = document.getElementById('motion_permission_text');
 let faceLandmarker;
 let runningMode = "VIDEO";
 let vfcLoopStarted = false;
@@ -258,52 +259,81 @@ function updateOutputCanvasSize() {
 // OSの画面ロック(回転ロック)がかかっていると、物理的に端末を回転させてもページのCSSレイアウト
 // (matchMediaのorientation)は変化しない。センサーは画面ロックと無関係に動き続けるため、
 // 「センサーは横向きを検知しているのにページは縦向きのまま(またはその逆)」という食い違いが
-// 一定時間続いたら画面ロック中と確定し、それ以降は回転処理を適用しない(現在の向きを維持する)。
-// ※OS側の通常の回転反映にも多少の遅延があるため、食い違い自体は毎回すぐには判定確定しない
-// (確定するまでは通常どおりセンサーの結果を即時反映するので、ロックなし時の速さは変わらない)。
+// 一定時間続いたら画面ロック中と判定する。
+//
+// この判定は起動直後に1回だけ行う(常時チェックし続けるとセンサー処理のコストがかかり続けるうえ、
+// ユーザーが実際に端末を回転させるまで判定が確定しないため)。起動時にオーバーレイでアニメーションと
+// 案内文を表示して軽く端末を傾けてもらい、判定が確定し次第オーバーレイを消して、
+// ロック中なら0度の状態に固定したまま以後は何もしない、ロックなしなら通常の追従動作に切り替える。
 const ORIENTATION_LOCK_DETECT_DELAY_MS = 600;
+const ORIENTATION_CHECK_TIMEOUT_MS = 4000; // 端末を傾けてもらえなかった場合のフォールバック
 let mismatchSinceMs = null;
-let osOrientationLocked = false;
+let orientationCheckDone = false;
+let lockedMode = false;
+let orientationCheckTimeoutId = null;
 
+function showOrientationCheckUI(text) {
+    motionPermissionOverlay.hidden = false;
+    motionPermissionText.textContent = text;
+}
+
+function hideOrientationCheckUI() {
+    motionPermissionOverlay.hidden = true;
+}
+
+function finishOrientationCheck(locked) {
+    if (orientationCheckDone) return;
+    orientationCheckDone = true;
+    lockedMode = locked;
+    clearTimeout(orientationCheckTimeoutId);
+    hideOrientationCheckUI();
+    if (locked && rotationState !== 'none') {
+        rotationState = 'none';
+        document.documentElement.setAttribute('data-rotation', 'none');
+        updateOutputCanvasSize();
+    }
+}
+
+// 起動直後の1回だけ呼ばれる判定処理。センサーの結果とページの向きが一致すればロックなしと確定し、
+// 食い違いがORIENTATION_LOCK_DETECT_DELAY_MS続けばロック中と確定する。
+function runOrientationCheck() {
+    if (orientationCheckDone) return;
+    const candidate = computeRotationState();
+    const candidateIsSideways = candidate === 'cw' || candidate === 'ccw';
+    const matches = landscapeMql.matches;
+
+    if (candidateIsSideways && matches) {
+        rotationState = candidate;
+        document.documentElement.setAttribute('data-rotation', rotationState);
+        updateOutputCanvasSize();
+        finishOrientationCheck(false);
+        return;
+    }
+
+    const mismatched = candidateIsSideways !== matches;
+    if (mismatched) {
+        if (mismatchSinceMs === null) {
+            mismatchSinceMs = Date.now();
+        } else if (Date.now() - mismatchSinceMs >= ORIENTATION_LOCK_DETECT_DELAY_MS) {
+            finishOrientationCheck(true);
+        }
+    } else {
+        mismatchSinceMs = null;
+    }
+}
+
+// 判定確定後(ロックなし)に使う、通常の追従処理
 function applyRotationState() {
     if (!isMobile) {
         if (rotationState !== 'none') {
             rotationState = 'none';
-            document.documentElement.setAttribute('data-rotation', rotationState);
+            document.documentElement.setAttribute('data-rotation', 'none');
             updateOutputCanvasSize();
         }
         return;
     }
 
     const candidate = computeRotationState();
-    const candidateIsSideways = candidate === 'cw' || candidate === 'ccw';
-    const mismatched = candidateIsSideways !== landscapeMql.matches;
-
-    if (mismatched) {
-        if (mismatchSinceMs === null) {
-            mismatchSinceMs = Date.now();
-            showToast(`向き不一致検知 angle:${Math.round(latestRollDeg)} landscapeMql:${landscapeMql.matches}`);
-        } else if (!osOrientationLocked && Date.now() - mismatchSinceMs >= ORIENTATION_LOCK_DETECT_DELAY_MS) {
-            osOrientationLocked = true;
-            showToast('画面ロックを検出 → 0度に固定');
-            if (rotationState !== 'none') {
-                rotationState = 'none';
-                document.documentElement.setAttribute('data-rotation', rotationState);
-                updateOutputCanvasSize();
-            }
-        }
-    } else {
-        if (osOrientationLocked) {
-            showToast('画面ロック解除を検出');
-        }
-        mismatchSinceMs = null;
-        osOrientationLocked = false;
-    }
-
-    if (osOrientationLocked) {
-        return; // 画面ロック中とみなし、0度の状態を維持したまま何もしない
-    }
-
     if (candidate === rotationState) return;
     rotationState = candidate;
     document.documentElement.setAttribute('data-rotation', rotationState);
@@ -357,7 +387,10 @@ function startCamera() {
 let rotationDebounceTimer = null;
 function scheduleRotationUpdate() {
     clearTimeout(rotationDebounceTimer);
-    rotationDebounceTimer = setTimeout(applyRotationState, 150);
+    rotationDebounceTimer = setTimeout(() => {
+        if (!orientationCheckDone || lockedMode) return;
+        applyRotationState();
+    }, 150);
 }
 
 // 重力ベクトル(画面のX/Y平面への投影)からロール角を求める。
@@ -380,14 +413,22 @@ function handleDeviceMotion(event) {
     // 第2引数(Y)の符号を反転: 実機では「縦持ち(0度)」と「上下逆さま(180度)」が
     // 逆に計算されていたため補正(左右cw/ccwの判定軸には影響しない)
     latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
+
+    if (!orientationCheckDone) {
+        runOrientationCheck();
+        return;
+    }
+    if (lockedMode) return;
     applyRotationState();
 }
 
 // devicemotionが使えない端末向けのフォールバック
+// (gamma単体では折り返し等の判定に使えないため、ロック判定自体はタイムアウトに任せる)
 function handleDeviceOrientation(event) {
     if (rollAvailable || typeof event.gamma !== 'number') return;
     gammaAvailable = true;
     latestGamma = event.gamma;
+    if (!orientationCheckDone || lockedMode) return;
     applyRotationState();
 }
 
@@ -415,8 +456,13 @@ const needsMotionPermission =
     (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') ||
     (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function');
 
+function beginOrientationCheck() {
+    showOrientationCheckUI('スマホを軽く左右に傾けてください\n画面の向きを確認しています…');
+    startRotationSensors();
+    orientationCheckTimeoutId = setTimeout(() => finishOrientationCheck(false), ORIENTATION_CHECK_TIMEOUT_MS);
+}
+
 if (isMobile) {
-    applyRotationState();
     if (screen.orientation && screen.orientation.addEventListener) {
         screen.orientation.addEventListener('change', scheduleRotationUpdate);
     } else {
@@ -425,18 +471,18 @@ if (isMobile) {
     landscapeMql.addEventListener('change', scheduleRotationUpdate);
 
     if (needsMotionPermission) {
-        motionPermissionOverlay.hidden = false;
+        showOrientationCheckUI('タップして開始');
         motionPermissionOverlay.addEventListener('click', function onTapToStart() {
             motionPermissionOverlay.removeEventListener('click', onTapToStart);
             requestMotionPermissions()
-                .then(() => startRotationSensors())
-                .catch((err) => console.error("モーション許可の取得に失敗しました: ", err))
-                .finally(() => {
-                    motionPermissionOverlay.hidden = true;
+                .then(() => beginOrientationCheck())
+                .catch((err) => {
+                    console.error("モーション許可の取得に失敗しました: ", err);
+                    finishOrientationCheck(false);
                 });
         }, { once: true });
     } else {
-        startRotationSensors();
+        beginOrientationCheck();
     }
 }
 

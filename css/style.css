@@ -163,22 +163,6 @@ html, body {
   }
 }
 
-/* スマホボタン位置 */
-@media (orientation: landscape) and (pointer: coarse) {
-  #camera_controls {
-    left: auto;
-    right: max(28px, env(safe-area-inset-right, 28px));
-    bottom: auto;
-    top: 50%;
-    transform: translateY(-50%);
-    flex-direction: column;
-  }
-
-  #switch_camera_btn .switch_icon {
-    transform: rotate(90deg);
-  }
-}
-
 /* ローディング表示 */
 #ar_loading {
   position: fixed;

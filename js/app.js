@@ -19,10 +19,8 @@ let rafLoopRunning = false;
 let currentFacingMode = 'user';
 let currentStream = null;
 let selectedDeviceId = null;
-let needsRotationCorrection = false;
 let rawVideoWidth = 0;
 let rawVideoHeight = 0;
-const ROTATION_CORRECTION_DEG = -90;
 
 // マスクサイズ
 const MASK_WIDTH = 1024 / 480 * 20;
@@ -189,16 +187,11 @@ function startCamera() {
             video.addEventListener("loadeddata", () => {
                 const videoWidth = video.videoWidth;
                 const videoHeight = video.videoHeight;
-                const expectedPortrait = isMobile && !landscapeMql.matches;
-                const actualPortrait = videoHeight >= videoWidth;
-                needsRotationCorrection = expectedPortrait !== actualPortrait;
 
                 rawVideoWidth = videoWidth;
                 rawVideoHeight = videoHeight;
 
-                const dispWidth = needsRotationCorrection ? videoHeight : videoWidth;
-                const dispHeight = needsRotationCorrection ? videoWidth : videoHeight;
-                const { width: canvasWidth, height: canvasHeight } = getOutputCanvasSize(dispWidth, dispHeight);
+                const { width: canvasWidth, height: canvasHeight } = getOutputCanvasSize(videoWidth, videoHeight);
 
                 outputCanvas.width = canvasWidth;
                 outputCanvas.height = canvasHeight;
@@ -211,7 +204,7 @@ function startCamera() {
                 camera.updateProjectionMatrix();
                 startFrameLoop();
                 showArLoading();
-                showToast(`raw:${videoWidth}x${videoHeight} rot:${needsRotationCorrection} canvas:${canvasWidth}x${canvasHeight}`);
+                showToast(`raw:${videoWidth}x${videoHeight} canvas:${canvasWidth}x${canvasHeight}`);
                 resolve();
             }, { once: true });
         });
@@ -224,34 +217,6 @@ function startCamera() {
     .catch((err) => {
         console.error("カメラの起動に失敗しました: ", err);
         throw err;
-    });
-}
-
-let orientationDebounceTimer = null;
-let orientationRestartInProgress = false;
-let orientationRestartQueued = false;
-
-function runOrientationRestart() {
-    if (orientationRestartInProgress) {
-        orientationRestartQueued = true;
-        return;
-    }
-    orientationRestartInProgress = true;
-    startCamera()
-        .catch((err) => console.error("向き変更に伴うカメラ再起動に失敗しました: ", err))
-        .finally(() => {
-            orientationRestartInProgress = false;
-            if (orientationRestartQueued) {
-                orientationRestartQueued = false;
-                runOrientationRestart();
-            }
-        });
-}
-
-if (isMobile) {
-    landscapeMql.addEventListener('change', () => {
-        clearTimeout(orientationDebounceTimer);
-        orientationDebounceTimer = setTimeout(runOrientationRestart, 200);
     });
 }
 
@@ -517,22 +482,12 @@ function renderComposite(w, h, timeSec) {
     ctx.clearRect(0, 0, w, h);
     ctx.save();
 
-    if (needsRotationCorrection) {
-        ctx.translate(w / 2, h / 2);
-        ctx.rotate((-90 * Math.PI) / 180);
-        if (currentFacingMode === 'user') {
-            ctx.scale(-1, 1); 
-        }
-        ctx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2, rawVideoWidth, rawVideoHeight);
-        ctx.drawImage(arCanvas, -rawVideoWidth / 2, -rawVideoHeight / 2, rawVideoWidth, rawVideoHeight);
-    } else {
-        if (currentFacingMode === 'user') {
-            ctx.translate(w, 0);
-            ctx.scale(-1, 1);
-        }
-        ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
-        ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
+    if (currentFacingMode === 'user') {
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
     }
+    ctx.drawImage(video, 0, 0, rawVideoWidth, rawVideoHeight);
+    ctx.drawImage(arCanvas, 0, 0, rawVideoWidth, rawVideoHeight);
 
     ctx.restore();
 }

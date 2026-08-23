@@ -180,17 +180,22 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
 //
 // screen.orientation / window.orientation はOSが要約した回転状態のため、
 // 180度(上下逆さま)を経由する回転でOS側が古い値のまま固まることがある(特にiPhone)。
-// これを避けるため、生の加速度センサー(deviceorientationのgamma値)が使える場合はそちらを優先する。
-// ※実機で左右の対応が逆に感じる場合はGAMMA_SIGNを-1に、角度方式の場合は下の2配列を入れ替えてください
+// また deviceorientation の gamma 値は「端末を垂直に構えている」前提の値のため、
+// 顔合わせのために端末を前後に傾ける(beta変化)とgamma自体が歪み、誤検知の原因になる。
+// そこで、iPhone純正のUI回転と同じ「重力ベクトルを画面平面に投影してロール角を出す」方式
+// (devicemotionのaccelerationIncludingGravity)を最優先で使い、前後の傾きの影響を受けないようにする。
+// ※実機で左右の対応が逆に感じる場合はROLL_SIGN/GAMMA_SIGNを-1に、角度方式の場合は下の2配列を入れ替えてください
 const ROTATION_CW_ANGLES = [270];
 const ROTATION_CCW_ANGLES = [90];
 
+const ROLL_SIGN = 1;
 const GAMMA_SIGN = 1;
-// iPhone純正の回転タイミング(体感で約25度前後)に合わせた近似値
-// ※Appleは正確な閾値を公開していないため、実機の感触に合わせて微調整してください
-const GAMMA_ENTER_THRESHOLD = 25; // 度: これを超えたら横向きと判定する
-const GAMMA_EXIT_THRESHOLD = 20;  // 度: ここを下回ったら縦向きに戻す(チラつき防止のヒステリシス)
+// iPhone純正と同じ45度で切り替える(ちらつき防止のためexitのみ少し内側に設定)
+const ROTATE_ENTER_THRESHOLD = 45; // 度: これを超えたら横向きと判定する
+const ROTATE_EXIT_THRESHOLD = 40;  // 度: ここを下回ったら縦向きに戻す(チラつき防止のヒステリシス)
 
+let rollAvailable = false;
+let latestRollDeg = 0;
 let gammaAvailable = false;
 let latestGamma = 0;
 
@@ -204,24 +209,26 @@ function getScreenAngle() {
     return 0;
 }
 
-function computeRotationStateFromGamma(gamma, previous) {
-    const g = gamma * GAMMA_SIGN;
+function classifyAngle(angleDeg, previous) {
     if (previous === 'cw') {
-        if (g < -GAMMA_ENTER_THRESHOLD) return 'ccw';
-        return g > GAMMA_EXIT_THRESHOLD ? 'cw' : 'none';
+        if (angleDeg < -ROTATE_ENTER_THRESHOLD) return 'ccw';
+        return angleDeg > ROTATE_EXIT_THRESHOLD ? 'cw' : 'none';
     }
     if (previous === 'ccw') {
-        if (g > GAMMA_ENTER_THRESHOLD) return 'cw';
-        return g < -GAMMA_EXIT_THRESHOLD ? 'ccw' : 'none';
+        if (angleDeg > ROTATE_ENTER_THRESHOLD) return 'cw';
+        return angleDeg < -ROTATE_EXIT_THRESHOLD ? 'ccw' : 'none';
     }
-    if (g > GAMMA_ENTER_THRESHOLD) return 'cw';
-    if (g < -GAMMA_ENTER_THRESHOLD) return 'ccw';
+    if (angleDeg > ROTATE_ENTER_THRESHOLD) return 'cw';
+    if (angleDeg < -ROTATE_ENTER_THRESHOLD) return 'ccw';
     return 'none';
 }
 
 function computeRotationState() {
+    if (rollAvailable) {
+        return classifyAngle(latestRollDeg, rotationState);
+    }
     if (gammaAvailable) {
-        return computeRotationStateFromGamma(latestGamma, rotationState);
+        return classifyAngle(latestGamma * GAMMA_SIGN, rotationState);
     }
     const angle = getScreenAngle();
     if (ROTATION_CW_ANGLES.includes(angle)) return 'cw';
@@ -297,16 +304,49 @@ function scheduleRotationUpdate() {
     rotationDebounceTimer = setTimeout(applyRotationState, 150);
 }
 
+// 重力ベクトル(画面のX/Y平面への投影)からロール角を求める。
+// 前後の傾き(pitch)を変えても、端末自身のZ軸(画面を貫く軸)まわりの回転(=ロール)には影響しないため、
+// 顔を画角に収めるために端末を前後に傾ける操作では誤検知しない。
+function handleDeviceMotion(event) {
+    const acc = event.accelerationIncludingGravity;
+    if (!acc || typeof acc.x !== 'number' || typeof acc.y !== 'number') return;
+    if (Math.hypot(acc.x, acc.y) < 1) return; // ほぼ水平(画面が真上/真下)で向きが定義できない場合は無視
+    rollAvailable = true;
+    latestRollDeg = Math.atan2(acc.x * ROLL_SIGN, acc.y) * 180 / Math.PI;
+    applyRotationState();
+}
+
+// devicemotionが使えない端末向けのフォールバック
 function handleDeviceOrientation(event) {
-    if (typeof event.gamma !== 'number') return;
+    if (rollAvailable || typeof event.gamma !== 'number') return;
     gammaAvailable = true;
     latestGamma = event.gamma;
     applyRotationState();
 }
 
-function startGammaTracking() {
-    window.addEventListener('deviceorientation', handleDeviceOrientation);
+function startRotationSensors() {
+    if (typeof DeviceMotionEvent !== 'undefined') {
+        window.addEventListener('devicemotion', handleDeviceMotion);
+    }
+    if (typeof DeviceOrientationEvent !== 'undefined') {
+        window.addEventListener('deviceorientation', handleDeviceOrientation);
+    }
 }
+
+function requestMotionPermissions() {
+    const requests = [];
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        requests.push(DeviceMotionEvent.requestPermission());
+    }
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        requests.push(DeviceOrientationEvent.requestPermission());
+    }
+    return Promise.all(requests);
+}
+
+const needsMotionPermission =
+    (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') ||
+    (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function');
 
 if (isMobile) {
     applyRotationState();
@@ -317,23 +357,19 @@ if (isMobile) {
     }
     landscapeMql.addEventListener('change', scheduleRotationUpdate);
 
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    if (needsMotionPermission) {
         motionPermissionOverlay.hidden = false;
         motionPermissionOverlay.addEventListener('click', function onTapToStart() {
             motionPermissionOverlay.removeEventListener('click', onTapToStart);
-            DeviceOrientationEvent.requestPermission()
-                .then((result) => {
-                    if (result === 'granted') {
-                        startGammaTracking();
-                    }
-                })
+            requestMotionPermissions()
+                .then(() => startRotationSensors())
                 .catch((err) => console.error("モーション許可の取得に失敗しました: ", err))
                 .finally(() => {
                     motionPermissionOverlay.hidden = true;
                 });
         }, { once: true });
-    } else if (typeof DeviceOrientationEvent !== 'undefined') {
-        startGammaTracking();
+    } else {
+        startRotationSensors();
     }
 }
 

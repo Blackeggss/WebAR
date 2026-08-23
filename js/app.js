@@ -262,21 +262,25 @@ function updateOutputCanvasSize() {
 
 // OSの画面ロック(回転ロック)がかかっていると、物理的に端末を回転させてもページのCSSレイアウト
 // (matchMediaのorientation)は変化しない。センサーは画面ロックと無関係に動き続けるため、
-// 「実際に50度以上はっきり傾けた瞬間に、ページの向きが追従しているかどうか」を1回だけ見れば
-// ロックの有無を判定できる。追従していればロックなし、していなければロック中と即座に確定する
-// (追従の遅延待ちなどはしない)。
+// 「実際に50度以上はっきり傾けた瞬間に、ページの向きが追従しているかどうか」を見ればロックの有無を
+// 判定できる。追従していれば(=一致)即座にロックなしと確定する。ただし追従にはOS側のネイティブな
+// 回転リフローの遅延があり、センサーが50度に達する速さの方が勝ることがあるため、まだ追従していない
+// 場合はすぐにロック確定とはせず、ORIENTATION_LOCK_GRACE_MSだけ待って再確認する
+// (この間に追従すればロックなし、追従しなければロック中と確定する)。
 //
 // この判定は起動直後に1回だけ行う(常時チェックし続けるとセンサー処理のコストがかかり続けるうえ、
 // ユーザーが実際に端末を回転させるまで判定が確定しないため)。起動時にオーバーレイでアニメーションと
 // 案内文を表示して端末を傾けてもらい、判定が確定し次第オーバーレイを消して、
 // ロック中なら0度の状態に固定したまま以後は何もしない、ロックなしなら通常の追従動作に切り替える。
-const ORIENTATION_LOCK_CHECK_ANGLE = 50; // この角度をはっきり超えた瞬間に一発判定する
+const ORIENTATION_LOCK_CHECK_ANGLE = 50; // この角度をはっきり超えたらページの追従状況を見始める
+const ORIENTATION_LOCK_GRACE_MS = 500; // OS側のネイティブ回転リフローが追いつくのを待つ猶予
 const ORIENTATION_CHECK_NUDGE_MS = 3000; // この時間、境界を超えなければ「もう少し傾けてください」を表示
 const ORIENTATION_CHECK_SAFETY_TIMEOUT_MS = 15000; // センサーが使えない等の異常時にオーバーレイが残り続けないための保険
 let orientationCheckDone = false;
 let lockedMode = false;
 let orientationCheckNudgeTimeoutId = null;
 let orientationCheckSafetyTimeoutId = null;
+let lockCheckPendingSinceMs = null;
 
 function showOrientationCheckUI(text) {
     motionPermissionOverlay.hidden = false;
@@ -301,8 +305,9 @@ function finishOrientationCheck(locked) {
     }
 }
 
-// 起動直後の1回だけ呼ばれる判定処理。50度をはっきり超えた瞬間に、ページの向きが追従していれば
-// ロックなし、していなければロック中と即座に確定する(待ち時間なし)。
+// 起動直後の1回だけ呼ばれる判定処理。50度をはっきり超えたら、ページの向きが追従しているかを見る。
+// 追従していれば即座にロックなしと確定。追従していなければ、OS側のリフロー遅延の可能性があるため
+// ORIENTATION_LOCK_GRACE_MSだけ待って再確認し、それでも追従しなければロック中と確定する。
 function runOrientationCheck() {
     if (orientationCheckDone || !rollAvailable) return;
     if (Math.abs(latestRollDeg) < ORIENTATION_LOCK_CHECK_ANGLE) return;
@@ -311,8 +316,18 @@ function runOrientationCheck() {
         rotationState = computeRotationState();
         document.documentElement.setAttribute('data-rotation', rotationState);
         updateOutputCanvasSize();
+        showToast(`ロック解除 angle:${Math.round(latestRollDeg)} state:${rotationState} attr:${document.documentElement.getAttribute('data-rotation')}`);
         finishOrientationCheck(false);
-    } else {
+        return;
+    }
+
+    // まだページが追従していない: OS側のリフローが追いついていないだけの可能性があるので少し待つ
+    if (lockCheckPendingSinceMs === null) {
+        lockCheckPendingSinceMs = Date.now();
+        return;
+    }
+    if (Date.now() - lockCheckPendingSinceMs >= ORIENTATION_LOCK_GRACE_MS) {
+        showToast(`ロック検出 angle:${Math.round(latestRollDeg)}`);
         finishOrientationCheck(true);
     }
 }
@@ -333,6 +348,7 @@ function applyRotationState() {
     rotationState = candidate;
     document.documentElement.setAttribute('data-rotation', rotationState);
     updateOutputCanvasSize();
+    showToast(`追従更新 angle:${Math.round(latestRollDeg)} state:${rotationState}`);
 }
 
 function startCamera() {

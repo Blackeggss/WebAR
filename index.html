@@ -8,7 +8,6 @@
     <link rel="preconnect" href="https://storage.googleapis.com" crossorigin>
     <link rel="preconnect" href="https://unpkg.com" crossorigin>
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 
     <script type="importmap">
       {
@@ -31,7 +30,11 @@
 
         <!-- カメラ切り替えボタン -->
         <button id="switch_camera_btn" aria-label="カメラを切り替える">
-            <span class="material-symbols-outlined switch_icon">cameraswitch</span>
+            <svg class="switch_icon" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"/>
+                <path d="M1 20v-6h6"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
         </button>
     </div>
 
@@ -53,12 +56,12 @@
     <!-- トースト -->
     <div id="toast"></div>
 
-    <!-- モーション許可 / 画面ロック判定オーバーレイ -->
+    <!-- モーション許可オーバーレイ -->
     <div id="motion_permission_overlay" hidden>
-        <div id="orientation_check_icon" aria-hidden="true">
-            <svg viewBox="0 0 40 72" width="40" height="72">
-                <rect x="2" y="2" width="36" height="68" rx="8" fill="none" stroke="#fff" stroke-width="3"/>
-                <circle cx="20" cy="62" r="2.5" fill="#fff"/>
+        <div id="tap_icon" aria-hidden="true">
+            <svg viewBox="0 0 60 60" width="60" height="60">
+                <circle class="tap_ripple" cx="30" cy="30" r="10" fill="none" stroke="#fff" stroke-width="3"/>
+                <circle class="tap_dot" cx="30" cy="30" r="7" fill="#fff"/>
             </svg>
         </div>
         <span id="motion_permission_text">タップして開始</span>

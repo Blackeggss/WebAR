@@ -8,11 +8,6 @@ html, body {
   overscroll-behavior: none;
 }
 
-.material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-  user-select: none;
-}
-
 #webcam {
   position: fixed;
   top: 0;
@@ -147,7 +142,7 @@ html, body {
 }
 
 #switch_camera_btn .switch_icon {
-  font-size: 26px;
+  display: block;
   transition: transform 200ms ease;
 }
 
@@ -299,13 +294,29 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   line-height: 1.6;
 }
 
-#orientation_check_icon {
+#tap_icon {
   display: inline-flex;
-  animation: orientationCheckShake 2s ease-in-out infinite;
 }
 
-@keyframes orientationCheckShake {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-90deg); }
-  75% { transform: rotate(90deg); }
+.tap_ripple {
+  transform-origin: 30px 30px;
+  transform-box: fill-box;
+  animation: tapRipple 1.4s ease-out infinite;
+}
+
+.tap_dot {
+  transform-origin: 30px 30px;
+  transform-box: fill-box;
+  animation: tapDot 1.4s ease-out infinite;
+}
+
+@keyframes tapRipple {
+  0% { transform: scale(0.5); opacity: 1; }
+  70%, 100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes tapDot {
+  0%, 20% { transform: scale(1); }
+  35% { transform: scale(0.8); }
+  50%, 100% { transform: scale(1); }
 }

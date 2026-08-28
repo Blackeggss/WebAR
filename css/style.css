@@ -32,11 +32,12 @@ html, body {
 }
 
 /* カメラ */
+/* leftはシャッターボタン(#shutter_btn、幅72px)自体が画面左右中央に来るようオフセット(72px/2=36px)している。
+   切り替えボタンはその右隣にgapを挟んで並ぶ */
 #camera_controls {
   position: fixed;
-  left: 50%;
+  left: calc(50% - 36px);
   bottom: max(28px, env(safe-area-inset-bottom, 28px));
-  transform: translateX(-50%);
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -298,25 +299,26 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   display: inline-flex;
 }
 
+/* 波紋は指がタップする瞬間(35%あたり)に合わせて広がり始める */
 .tap_ripple {
-  transform-origin: 30px 30px;
+  transform-origin: 30px 66px;
   transform-box: fill-box;
-  animation: tapRipple 1.4s ease-out infinite;
+  animation: tapRippleExpand 1.6s ease-out infinite;
 }
 
-.tap_dot {
-  transform-origin: 30px 30px;
+.tap_finger {
   transform-box: fill-box;
-  animation: tapDot 1.4s ease-out infinite;
+  animation: tapFingerPress 1.6s ease-in-out infinite;
 }
 
-@keyframes tapRipple {
-  0% { transform: scale(0.5); opacity: 1; }
-  70%, 100% { transform: scale(2); opacity: 0; }
+@keyframes tapFingerPress {
+  0%, 15% { transform: translateY(0); }
+  35% { transform: translateY(10px); }
+  55%, 100% { transform: translateY(0); }
 }
 
-@keyframes tapDot {
-  0%, 20% { transform: scale(1); }
-  35% { transform: scale(0.8); }
-  50%, 100% { transform: scale(1); }
+@keyframes tapRippleExpand {
+  0%, 33% { transform: scale(0.3); opacity: 0; }
+  38% { transform: scale(0.6); opacity: 1; }
+  75%, 100% { transform: scale(2.2); opacity: 0; }
 }

@@ -296,29 +296,58 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 }
 
 #tap_icon {
+  position: relative;
+  width: 70px;
+  height: 70px;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* 波紋は指がタップする瞬間(35%あたり)に合わせて指先の位置から広がり始める */
+/* タップ対象の丸(押し込まれるような拍動) */
+.tap_target {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px dashed rgba(255, 255, 255, 0.9);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.04) 70%);
+  box-sizing: border-box;
+  animation: tapTargetPulse 1.8s ease-in-out infinite;
+}
+
+/* 波紋(width/height/marginを同じキーフレームで動かして中心を保ったまま広がる) */
 .tap_ripple {
-  transform-origin: 40px 90px;
-  transform-box: fill-box;
-  animation: tapRippleExpand 1.6s ease-out infinite;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  box-sizing: border-box;
+  pointer-events: none;
+  animation: tapRippleOut 1.8s cubic-bezier(0, 0.2, 0.8, 1) infinite;
 }
 
-.tap_hand {
-  transform-box: fill-box;
-  animation: tapFingerPress 1.6s ease-in-out infinite;
+@keyframes tapRippleOut {
+  0% {
+    width: 20px;
+    height: 20px;
+    margin-top: -10px;
+    margin-left: -10px;
+    opacity: 1;
+    border-width: 3px;
+  }
+  100% {
+    width: 70px;
+    height: 70px;
+    margin-top: -35px;
+    margin-left: -35px;
+    opacity: 0;
+    border-width: 1px;
+  }
 }
 
-@keyframes tapFingerPress {
-  0%, 15% { transform: translateY(0); }
-  35% { transform: translateY(10px); }
-  55%, 100% { transform: translateY(0); }
-}
-
-@keyframes tapRippleExpand {
-  0%, 33% { transform: scale(0.3); opacity: 0; }
-  38% { transform: scale(0.6); opacity: 1; }
-  75%, 100% { transform: scale(2.2); opacity: 0; }
+@keyframes tapTargetPulse {
+  0%, 100% { transform: scale(1); }
+  15% { transform: scale(0.9); }
+  30% { transform: scale(1.05); }
 }

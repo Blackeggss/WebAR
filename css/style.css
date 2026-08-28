@@ -299,14 +299,14 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   display: inline-flex;
 }
 
-/* 波紋は指がタップする瞬間(35%あたり)に合わせて広がり始める */
+/* 波紋は指がタップする瞬間(35%あたり)に合わせて指先の位置から広がり始める */
 .tap_ripple {
-  transform-origin: 30px 66px;
+  transform-origin: 40px 90px;
   transform-box: fill-box;
   animation: tapRippleExpand 1.6s ease-out infinite;
 }
 
-.tap_finger {
+.tap_hand {
   transform-box: fill-box;
   animation: tapFingerPress 1.6s ease-in-out infinite;
 }

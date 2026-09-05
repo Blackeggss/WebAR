@@ -352,12 +352,13 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 }
 
 @keyframes tapDotPress {
-  0%, 100% { transform: translate(-50%, -50%) scale(1); }
-  20% { transform: translate(-50%, -50%) scale(0.7); }
-  40% { transform: translate(-50%, -50%) scale(1); }
+  0%, 40% { transform: translate(-50%, -50%) scale(1); }
+  45% { transform: translate(-50%, -50%) scale(0.7); }
+  65%, 100% { transform: translate(-50%, -50%) scale(1); }
 }
 
 @keyframes tapRipple {
-  0%, 15% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+  0%, 40% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+  45% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
   100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
 }

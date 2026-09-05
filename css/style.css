@@ -305,6 +305,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   display: block;
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 
 /* 指が押し込まれる動き */
@@ -314,9 +315,9 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 }
 
 @keyframes tapPress {
-  0%, 100% { transform: rotate(-30deg) translateY(0); }
-  20% { transform: rotate(-30deg) translateY(13px); }
-  40% { transform: rotate(-30deg) translateY(0); }
+  0%, 100% { transform: translateX(18px) rotate(-30deg) translateY(0); }
+  20% { transform: translateX(18px) rotate(-30deg) translateY(13px); }
+  40% { transform: translateX(18px) rotate(-30deg) translateY(0); }
 }
 
 .finger_line {

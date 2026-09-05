@@ -296,8 +296,9 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 }
 
 #tap_icon {
-  width: 120px;
-  height: 165px;
+  position: relative;
+  width: 75px;
+  height: 103px;
 }
 
 #tap_icon svg {
@@ -320,36 +321,43 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
 .finger_line {
   fill: none;
-  stroke: #000;
+  stroke: #fff;
   stroke-width: 7;
   stroke-linecap: round;
 }
 
-/* 指先で押し込まれる点 */
+/* 指先で押し込まれる点（指先の座標: viewBoxの39.5%, 22.5%の位置） */
 .tap_dot {
-  fill: #fff;
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
+  position: absolute;
+  left: 39.5%;
+  top: 22.5%;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
   animation: tapDotPress 1.4s ease-in-out infinite;
 }
 
 /* 指先から広がって消える波紋 */
 .tap_ripple {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 3;
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
+  position: absolute;
+  left: 39.5%;
+  top: 22.5%;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-sizing: border-box;
   animation: tapRipple 1.4s ease-out infinite;
 }
 
 @keyframes tapDotPress {
-  0%, 100% { transform: scale(1); }
-  20% { transform: scale(0.7); }
-  40% { transform: scale(1); }
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  20% { transform: translate(-50%, -50%) scale(0.7); }
+  40% { transform: translate(-50%, -50%) scale(1); }
 }
 
 @keyframes tapRipple {
-  0%, 15% { transform: scale(1); opacity: 0.9; }
-  100% { transform: scale(3); opacity: 0; }
+  0%, 15% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
 }

@@ -297,8 +297,8 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
 #tap_icon {
   position: relative;
-  width: 75px;
-  height: 103px;
+  width: 60px;
+  height: 82px;
 }
 
 #tap_icon svg {
@@ -330,7 +330,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 .tap_dot {
   position: absolute;
   left: 39.5%;
-  top: 22.5%;
+  top: 15%;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -342,7 +342,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 .tap_ripple {
   position: absolute;
   left: 39.5%;
-  top: 22.5%;
+  top: 15%;
   width: 22px;
   height: 22px;
   border-radius: 50%;

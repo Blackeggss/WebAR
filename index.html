@@ -59,8 +59,51 @@
     <!-- モーション許可オーバーレイ -->
     <div id="motion_permission_overlay" hidden>
         <div id="tap_icon" aria-hidden="true">
-            <span class="tap_ripple"></span>
-            <span class="tap_dot"></span>
+            <svg viewBox="0 -65 200 275" xmlns="http://www.w3.org/2000/svg">
+                <g class="hand">
+                    <path
+                        d="
+                            M 72 167
+                            C 65 165, 61 160, 61 153
+                            L 61 145
+                            L 30 111
+                            C 24 104, 25 94, 32 89
+                            C 38 84, 47 85, 53 91
+                            L 65 103
+                            L 65 12
+                            C 65 3, 71 -3, 79 -3
+                            C 87 -3, 93 3, 93 12
+                            L 93 86
+                            L 93 73
+                            C 93 50, 99 44, 107 44
+                            C 115 44, 121 50, 121 73
+                            L 121 89
+                            L 121 84
+                            C 121 61, 127 55, 135 55
+                            C 143 55, 149 61, 149 84
+                            L 149 98
+                            L 149 94
+                            C 149 71, 155 65, 163 65
+                            C 171 65, 177 71, 177 94
+                            L 177 125
+                            C 177 136, 174 143, 169 151
+                            C 164 160, 155 166, 145 169
+                            C 124 175, 94 175, 72 167
+                            Z
+                        "
+                        fill="white"
+                        stroke="black"
+                        stroke-width="7"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                    <path class="finger_line" d="M 93 86 L 93 12" />
+                    <path class="finger_line" d="M 121 89 L 121 73" />
+                    <path class="finger_line" d="M 149 98 L 149 84" />
+                </g>
+                <circle class="tap_dot" cx="79" cy="-3" r="12" />
+                <circle class="tap_ripple" cx="79" cy="-3" r="12" />
+            </svg>
         </div>
         <span id="motion_permission_text">タップして開始</span>
     </div>

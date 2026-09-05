@@ -315,7 +315,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
 @keyframes tapPress {
   0%, 100% { transform: translateY(0); }
-  20% { transform: translateY(5px); }
+  20% { transform: translateY(9px); }
   40% { transform: translateY(0); }
 }
 

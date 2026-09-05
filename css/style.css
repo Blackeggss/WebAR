@@ -276,7 +276,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 4px;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
@@ -315,9 +315,9 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 }
 
 @keyframes tapPress {
-  0%, 100% { transform: translateX(18px) rotate(-30deg) translateY(0); }
-  20% { transform: translateX(18px) rotate(-30deg) translateY(13px); }
-  40% { transform: translateX(18px) rotate(-30deg) translateY(0); }
+  0%, 100% { transform: translateX(20px) rotate(-30deg) translateY(0); }
+  20% { transform: translateX(20px) rotate(-30deg) translateY(13px); }
+  40% { transform: translateX(20px) rotate(-30deg) translateY(0); }
 }
 
 .finger_line {

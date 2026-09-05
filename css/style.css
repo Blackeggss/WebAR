@@ -330,9 +330,9 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 .tap_dot {
   position: absolute;
   left: 39.5%;
-  top: 15%;
-  width: 22px;
-  height: 22px;
+  top: 8%;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: #fff;
   animation: tapDotPress 1.4s ease-in-out infinite;
@@ -342,9 +342,9 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 .tap_ripple {
   position: absolute;
   left: 39.5%;
-  top: 15%;
-  width: 22px;
-  height: 22px;
+  top: 8%;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 2px solid #fff;
   box-sizing: border-box;

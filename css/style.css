@@ -315,7 +315,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
 @keyframes tapPress {
   0%, 100% { transform: translateY(0); }
-  20% { transform: translateY(9px); }
+  20% { transform: translateY(13px); }
   40% { transform: translateY(0); }
 }
 
@@ -330,7 +330,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 .tap_dot {
   position: absolute;
   left: 39.5%;
-  top: 8%;
+  top: 4%;
   width: 16px;
   height: 16px;
   border-radius: 50%;
@@ -342,7 +342,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 .tap_ripple {
   position: absolute;
   left: 39.5%;
-  top: 8%;
+  top: 4%;
   width: 16px;
   height: 16px;
   border-radius: 50%;

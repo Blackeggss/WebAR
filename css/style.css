@@ -312,6 +312,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 .hand {
   transform-origin: 79px -3px;
   animation: tapPress 1.4s ease-in-out infinite;
+  will-change: transform;
 }
 
 @keyframes tapPress {
@@ -337,6 +338,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   border-radius: 50%;
   background: #fff;
   animation: tapDotPress 1.4s ease-in-out infinite;
+  will-change: transform;
 }
 
 /* 指先から広がって消える波紋 */
@@ -350,6 +352,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   border: 2px solid #fff;
   box-sizing: border-box;
   animation: tapRipple 1.4s ease-out infinite;
+  will-change: transform, opacity;
 }
 
 @keyframes tapDotPress {

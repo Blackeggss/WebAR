@@ -309,14 +309,14 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
 /* 指が押し込まれる動き */
 .hand {
-  transform-origin: 50% 50%;
+  transform-origin: 79px -3px;
   animation: tapPress 1.4s ease-in-out infinite;
 }
 
 @keyframes tapPress {
-  0%, 100% { transform: translateY(0); }
-  20% { transform: translateY(13px); }
-  40% { transform: translateY(0); }
+  0%, 100% { transform: rotate(-30deg) translateY(0); }
+  20% { transform: rotate(-30deg) translateY(13px); }
+  40% { transform: rotate(-30deg) translateY(0); }
 }
 
 .finger_line {

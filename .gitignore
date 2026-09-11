@@ -2,4 +2,3 @@ venv/
 .venv/
 assets/*
 !assets/base.png
-tap.html

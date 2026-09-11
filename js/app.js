@@ -166,8 +166,7 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
         return { width: dispWidth, height: dispHeight };
     }
 
-    const isRotatedSideways = rotationState !== 'none';
-    const targetRatio = isRotatedSideways ? 4 / 3 : 3 / 4;
+    const targetRatio = 3 / 4;
     const currentRatio = dispWidth / dispHeight;
 
     if (currentRatio > targetRatio) {
@@ -254,7 +253,7 @@ function updateOutputCanvasSize() {
     if (!rawVideoWidth || !rawVideoHeight) return;
     // 実際の描画(renderComposite)は元映像を無回転のまま中央クロップして敷き詰めるだけなので、
     // ここでは元映像のネイティブ寸法をそのまま渡す(縦横を入れ替えない)。
-    // rotationStateによる縦横比の切り替えはgetOutputCanvasSize内のtargetRatioが担う。
+    // 画面の向きが変わってもアスペクト比は常に3:4に固定する(getOutputCanvasSize内のtargetRatio)。
     const { width, height } = getOutputCanvasSize(rawVideoWidth, rawVideoHeight);
     outputCanvas.width = width;
     outputCanvas.height = height;
@@ -359,7 +358,6 @@ function startCamera() {
                 camera.updateProjectionMatrix();
                 startFrameLoop();
                 showArLoading();
-                showToast(`raw:${videoWidth}x${videoHeight} canvas:${outputCanvas.width}x${outputCanvas.height}`);
                 resolve();
             }, { once: true });
         });

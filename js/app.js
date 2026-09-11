@@ -166,7 +166,9 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
         return { width: dispWidth, height: dispHeight };
     }
 
-    const targetRatio = 3 / 4;
+    // 横画面なら4:3、縦画面なら3:4にする
+    const isLandscape = landscapeMql.matches;
+    const targetRatio = isLandscape ? (4 / 3) : (3 / 4);
     const currentRatio = dispWidth / dispHeight;
 
     if (currentRatio > targetRatio) {
@@ -253,7 +255,7 @@ function updateOutputCanvasSize() {
     if (!rawVideoWidth || !rawVideoHeight) return;
     // 実際の描画(renderComposite)は元映像を無回転のまま中央クロップして敷き詰めるだけなので、
     // ここでは元映像のネイティブ寸法をそのまま渡す(縦横を入れ替えない)。
-    // 画面の向きが変わってもアスペクト比は常に3:4に固定する(getOutputCanvasSize内のtargetRatio)。
+    // landscapeMqlによる縦横比の切り替えはgetOutputCanvasSize内のtargetRatioが担う。
     const { width, height } = getOutputCanvasSize(rawVideoWidth, rawVideoHeight);
     outputCanvas.width = width;
     outputCanvas.height = height;
@@ -501,7 +503,12 @@ if (isMobile) {
     } else {
         window.addEventListener('orientationchange', scheduleRotationUpdate);
     }
-    landscapeMql.addEventListener('change', scheduleRotationUpdate);
+    landscapeMql.addEventListener('change', () => {
+        // targetRatio(4:3/3:4)はlandscapeMql.matchesに直接依存するため、
+        // rotationStateの変化を待たずここで即座にキャンバスサイズを再計算する。
+        updateOutputCanvasSize();
+        scheduleRotationUpdate();
+    });
 }
 
 // カメラ切り替えボタン

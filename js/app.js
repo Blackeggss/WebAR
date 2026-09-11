@@ -157,23 +157,30 @@ function getVideoConstraints() {
             ? { deviceId: { exact: selectedDeviceId }, ...base }
             : { facingMode: currentFacingMode, ...base };
     }
-    return landscapeMql.matches
-        ? { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } }
-        : { facingMode: currentFacingMode, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } };
+    // 画面の向きに関わらず常に同じ解像度(スマホカメラの標準的な16:9)を要求する。
+    // これによりrawVideoWidth/Heightが回転で変わらなくなり、getOutputCanvasSize側で
+    // 3:4/4:3どちらにクロップしても常に十分な余白があるため、細く切り取られる問題が起きない。
+    return { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } };
 }
 function getOutputCanvasSize(dispWidth, dispHeight) {
     if (!isMobile) {
         return { width: dispWidth, height: dispHeight };
     }
 
-    const targetRatio = 3 / 4;
-    
-    // 画面の向きにかかわらず、カメラの短い方の寸法（高さ）を基準にして3:4を計算
-    const baseDimension = Math.min(dispWidth, dispHeight);
-    const height = baseDimension;
-    const width = Math.round(height * targetRatio);
+    // 横画面なら4:3、縦画面なら3:4にする
+    const isLandscape = landscapeMql.matches;
+    const targetRatio = isLandscape ? (4 / 3) : (3 / 4);
+    const currentRatio = dispWidth / dispHeight;
 
-    return { width, height };
+    if (currentRatio > targetRatio) {
+        const height = dispHeight;
+        const width = Math.round(height * targetRatio);
+        return { width, height };
+    } else {
+        const width = dispWidth;
+        const height = Math.round(width / targetRatio);
+        return { width, height };
+    }
 }
 
 // 端末の物理的な回転方向を検出する('none'=縦持ち / 'cw'=時計回り(45〜180度) / 'ccw'=反時計回り(-45〜-180度))
@@ -247,20 +254,12 @@ function computeRotationState() {
 
 function updateOutputCanvasSize() {
     if (!rawVideoWidth || !rawVideoHeight) return;
-
+    // 実際の描画(renderComposite)は元映像を無回転のまま中央クロップして敷き詰めるだけなので、
+    // ここでは元映像のネイティブ寸法をそのまま渡す(縦横を入れ替えない)。
+    // landscapeMqlによる縦横比の切り替えはgetOutputCanvasSize内のtargetRatioが担う。
     const { width, height } = getOutputCanvasSize(rawVideoWidth, rawVideoHeight);
     outputCanvas.width = width;
     outputCanvas.height = height;
-
-    // AR用キャンバスと3Dカメラのアスペクト比も完全に3:4に同期
-    arCanvas.width = width;
-    arCanvas.height = height;
-
-    if (renderer && camera) {
-        renderer.setSize(width, height, false);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-    }
 }
 
 // OSの画面ロック(回転ロック)がかかっていると、物理的に端末を回転させてもページのCSSレイアウト
@@ -775,20 +774,17 @@ function renderComposite(w, h, timeSec) {
     ctx.clearRect(0, 0, w, h);
     ctx.save();
 
-    // 3:4のキャンバスに収めるためのビデオクロップ範囲を正確に計算
-    const canvasRatio = w / h; // 0.75 (3:4)
+    // 出力キャンバスのアスペクト比に合わせて元映像(arCanvasも同じ座標系)を中央クロップし、
+    // キャンバス全体に等倍でスケールして敷き詰める(検出側のrawVideoWidth/Heightはそのまま利用)
+    const canvasRatio = w / h;
     const videoRatio = rawVideoWidth / rawVideoHeight;
-
     let sx, sy, sWidth, sHeight;
-
     if (videoRatio > canvasRatio) {
-        // ビデオがキャンバスより横長の場合（横持ち時など）
         sHeight = rawVideoHeight;
         sWidth = sHeight * canvasRatio;
         sx = (rawVideoWidth - sWidth) / 2;
         sy = 0;
     } else {
-        // ビデオがキャンバスより縦長の場合
         sWidth = rawVideoWidth;
         sHeight = sWidth / canvasRatio;
         sx = 0;
@@ -799,12 +795,8 @@ function renderComposite(w, h, timeSec) {
         ctx.translate(w, 0);
         ctx.scale(-1, 1);
     }
-
-    // 1. 背景カメラ映像を描画（計算したクロップ範囲）
     ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, w, h);
-
-    // 2. ARキャンバスを描画（既に3:4でレンダリングされているため全体をそのまま重ねる）
-    ctx.drawImage(arCanvas, 0, 0, w, h);
+    ctx.drawImage(arCanvas, sx, sy, sWidth, sHeight, 0, 0, w, h);
 
     ctx.restore();
 }

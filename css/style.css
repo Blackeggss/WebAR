@@ -751,30 +751,31 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
     position: static;
   }
 
-  /* 常時表示の日時バッジ(旧「すべて保存」ボタンの位置。ボタンと同じ丸デザイン) */
+  /* 常時表示の日時バッジ(旧「すべて保存」ボタンの位置)。文字を読みやすくするため横長のピル型にしている */
   #gallery_date_badge {
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    flex-direction: row;
+    align-items: baseline;
     justify-content: center;
-    width: 44px;
+    gap: 6px;
     height: 44px;
-    border-radius: 50%;
+    min-width: 92px;
+    padding: 0 16px;
+    border-radius: 22px;
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.5);
     color: #fff;
-    line-height: 1.15;
     flex-shrink: 0;
   }
 
   #gallery_date_badge_date {
-    font-size: 9px;
+    font-size: 14px;
     font-weight: 600;
     white-space: nowrap;
   }
 
   #gallery_date_badge_time {
-    font-size: 8px;
+    font-size: 13px;
     opacity: 0.85;
     white-space: nowrap;
   }

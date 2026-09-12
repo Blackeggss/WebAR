@@ -157,25 +157,30 @@ function getVideoConstraints() {
             ? { deviceId: { exact: selectedDeviceId }, ...base }
             : { facingMode: currentFacingMode, ...base };
     }
-    return landscapeMql.matches
-        ? { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } }
-        : { facingMode: currentFacingMode, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } };
+    // 画面の向きに関わらず常に同じ解像度(スマホカメラの標準的な16:9)を要求する。
+    // これによりrawVideoWidth/Heightが回転で変わらなくなり、getOutputCanvasSize側で
+    // 3:4/4:3どちらにクロップしても常に十分な余白があるため、細く切り取られる問題が起きない。
+    return { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } };
 }
 function getOutputCanvasSize(dispWidth, dispHeight) {
     if (!isMobile) {
         return { width: dispWidth, height: dispHeight };
     }
 
-    // 画面の向きに関わらず常に3:4で出力する(landscapeMqlには依存させない)。
-    // カメラ映像自体は回転してもストリームを再起動しない限りネイティブ寸法が変わらないため、
-    // ここを向きで切り替えると「今の向き」と「実際の映像の形」がズレて極端なクロップになる。
-    // 実際のdispWidth/dispHeightの形(縦長/横長どちらでも)から短い方を基準に3:4を計算すれば
-    // 常に安全にクロップできる。
-    const targetRatio = 3 / 4;
-    const baseDimension = Math.min(dispWidth, dispHeight);
-    const height = baseDimension;
-    const width = Math.round(height * targetRatio);
-    return { width, height };
+    // 横画面なら4:3、縦画面なら3:4にする
+    const isLandscape = landscapeMql.matches;
+    const targetRatio = isLandscape ? (4 / 3) : (3 / 4);
+    const currentRatio = dispWidth / dispHeight;
+
+    if (currentRatio > targetRatio) {
+        const height = dispHeight;
+        const width = Math.round(height * targetRatio);
+        return { width, height };
+    } else {
+        const width = dispWidth;
+        const height = Math.round(width / targetRatio);
+        return { width, height };
+    }
 }
 
 // 端末の物理的な回転方向を検出する('none'=縦持ち / 'cw'=時計回り(45〜180度) / 'ccw'=反時計回り(-45〜-180度))

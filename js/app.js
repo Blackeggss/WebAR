@@ -266,8 +266,8 @@ function updateLockedEarlyZone(angleDeg) {
 function getDetectionRotationRad() {
     if (lockedMode) {
         if (isUpsideDown) return Math.PI;
-        if (lockedEarlyZone === 'cw') return Math.PI / 2;
-        if (lockedEarlyZone === 'ccw') return -Math.PI / 2;
+        if (lockedEarlyZone === 'cw') return -Math.PI / 2;
+        if (lockedEarlyZone === 'ccw') return Math.PI / 2;
         return 0;
     }
     return isUpsideDown ? (-upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2)) : 0;

@@ -406,10 +406,21 @@ function toggleImmersive() {
     galleryOverlay.classList.toggle('immersive');
 }
 
-window.addEventListener('resize', () => {
-    if (galleryOverlay.hidden) return;
-    settleTrackInstant();
-});
+// 画面回転直後はresizeイベントが実際のレイアウト確定前に複数回発火することがあるため、
+// 少し待ってから位置を再計算する(スマホを横→縦に回転した際にトラックの位置がズレる不具合の対策)
+let galleryOrientationDebounceTimer = null;
+function scheduleGalleryResettle() {
+    clearTimeout(galleryOrientationDebounceTimer);
+    galleryOrientationDebounceTimer = setTimeout(() => {
+        if (galleryOverlay.hidden) return;
+        settleTrackInstant();
+    }, 150);
+}
+window.addEventListener('resize', scheduleGalleryResettle);
+window.addEventListener('orientationchange', scheduleGalleryResettle);
+if (window.screen && screen.orientation && screen.orientation.addEventListener) {
+    screen.orientation.addEventListener('change', scheduleGalleryResettle);
+}
 
 async function ensureThumbListLoaded() {
     if (thumbListLoadPromise) return thumbListLoadPromise;
@@ -589,7 +600,7 @@ const TAP_MOVE_THRESHOLD = 10;
 const TAP_TIME_THRESHOLD_MS = 400;
 const AXIS_LOCK_THRESHOLD = 6; // 横スワイプか縦操作(タップ等)かを見極めるまでの遊び
 const EDGE_RESISTANCE = 0.3; // 端の写真をさらにその方向へ引っ張った時の抵抗(iPhone風のラバーバンド)
-const SWIPE_COMMIT_RATIO = 0.2; // 画面幅の何%動かしたら次/前の写真に切り替えるか
+const SWIPE_COMMIT_RATIO = 0.5; // ゆっくりドラッグした場合、画面の半分を超えたら次/前の写真に切り替える(速いフリックは別ロジック)
 const FAST_FLICK_VELOCITY = 0.5; // px/ms(≈時速500px/s)。これを超える速さの指離しは距離が短くても切り替える
 const VELOCITY_WINDOW_MS = 80; // 速度計算に使う直近の時間窓
 

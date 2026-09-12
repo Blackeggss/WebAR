@@ -67,6 +67,12 @@ const _euler = new THREE.Euler();
 const _upsideDownAxis = new THREE.Vector3(0, 0, 1);
 const _upsideDownCorrectionQuat = new THREE.Quaternion();
 let lastTimestampSec = 0;
+// --- デバッグ用スクラッチ(原因切り分けが済んだら削除してください) ---
+const _debugPos = new THREE.Vector3();
+const _debugQuat = new THREE.Quaternion();
+const _debugScale = new THREE.Vector3();
+let lastArDebugLogSec = 0;
+// --- ここまで ---
 
 const _detPos = Array.from({ length: MAX_FACES }, () => new THREE.Vector3());
 const _detQuat = Array.from({ length: MAX_FACES }, () => new THREE.Quaternion());
@@ -785,6 +791,26 @@ function applyResults(results, timestampMs) {
 
     const faceCount = matrices ? Math.min(matrices.length, maskMeshes.length) : 0;
 
+    // --- デバッグ用(原因切り分けが済んだら削除してください) ---
+    if (faceCount > 0 && nowSec - lastArDebugLogSec > 1) {
+        lastArDebugLogSec = nowSec;
+        _matrix.fromArray(matrices[0].data);
+        _matrix.decompose(_debugPos, _debugQuat, _debugScale);
+        console.log('[AR-DEBUG]', {
+            isUpsideDown,
+            upsideDownDir,
+            rawVideoWidth,
+            rawVideoHeight,
+            rotatedVideoCanvasW: rotatedVideoCanvas.width,
+            rotatedVideoCanvasH: rotatedVideoCanvas.height,
+            currentDetectionContainScale,
+            cameraAspect: camera.aspect,
+            rawDetPos: _debugPos.toArray(),
+            rawDetScale: _debugScale.toArray(),
+        });
+    }
+    // --- ここまで ---
+
     if (isUpsideDown) {
         // 画像空間(Y下向き)とThree.jsのカメラ空間(Y上向き)はY軸の向きが逆なので、
         // 画面上で見た回転の向きは同じでもZ軸まわりの回転としては符号がそのまま一致する
@@ -801,7 +827,15 @@ function applyResults(results, timestampMs) {
         if (isUpsideDown) {
             _detPos[i].applyQuaternion(_upsideDownCorrectionQuat);
             _detQuat[i].premultiply(_upsideDownCorrectionQuat);
-            _detScale[i].multiplyScalar(1 / currentDetectionContainScale);
+            // MediaPipeはframe_height(検出canvasの高さ)だけを基準に固定画角(63度)から
+            // ワールド座標を再構成する。今回は高さをrawVideoHeightに合わせつつ、
+            // 90度回転した内容を収めるため中身をcontainScale倍に縮小して描いている。
+            // その結果、顔の見かけの画素サイズがcontainScale倍小さくなり、
+            // MediaPipeからは「本来より1/containScale倍遠く・大きい」座標(position・scale双方)
+            // として返ってくる。位置とスケールは同じ再構成パイプラインから出た値で、
+            // 同じ比率でズレているため、どちらもcontainScaleを掛けて実寸に戻す。
+            _detPos[i].multiplyScalar(currentDetectionContainScale);
+            _detScale[i].multiplyScalar(currentDetectionContainScale);
         }
     }
 

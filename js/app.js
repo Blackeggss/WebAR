@@ -163,8 +163,24 @@ function getVideoConstraints() {
     return { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } };
 }
 function getOutputCanvasSize(dispWidth, dispHeight) {
-    // 強制的な3:4/4:3トリミングはせず、映像のネイティブ解像度をそのままキャンバスサイズにする。
-    return { width: dispWidth, height: dispHeight };
+    if (!isMobile) {
+        return { width: dispWidth, height: dispHeight };
+    }
+
+    // 横画面なら4:3、縦画面なら3:4にする
+    const isLandscape = landscapeMql.matches;
+    const targetRatio = isLandscape ? (4 / 3) : (3 / 4);
+    const currentRatio = dispWidth / dispHeight;
+
+    if (currentRatio > targetRatio) {
+        const height = dispHeight;
+        const width = Math.round(height * targetRatio);
+        return { width, height };
+    } else {
+        const width = dispWidth;
+        const height = Math.round(width / targetRatio);
+        return { width, height };
+    }
 }
 
 // 端末の物理的な回転方向を検出する('none'=縦持ち / 'cw'=時計回り(45〜180度) / 'ccw'=反時計回り(-45〜-180度))
@@ -240,7 +256,7 @@ function updateOutputCanvasSize() {
     if (!rawVideoWidth || !rawVideoHeight) return;
     // 実際の描画(renderComposite)は元映像を無回転のまま中央クロップして敷き詰めるだけなので、
     // ここでは元映像のネイティブ寸法をそのまま渡す(縦横を入れ替えない)。
-    // getOutputCanvasSizeは強制トリミングをせず、ネイティブ解像度をそのまま返す。
+    // landscapeMqlによる縦横比の切り替えはgetOutputCanvasSize内のtargetRatioが担う。
     const { width, height } = getOutputCanvasSize(rawVideoWidth, rawVideoHeight);
     outputCanvas.width = width;
     outputCanvas.height = height;

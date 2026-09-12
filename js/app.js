@@ -982,14 +982,31 @@ function flashEffect() {
 }
 
 // 上下さかさま時は保存用の画像だけ90度時計回りに回転させる(プレビューのoutputCanvas自体は無回転のまま)。
+// 保存用画像の回転角度(ラジアン)。ロックの有無・現在の向きの組み合わせで実機検証した値。
+function getPhotoRotationRad() {
+    if (lockedMode) {
+        if (isUpsideDown) return Math.PI; // 180度
+        if (lockedEarlyZone === 'cw') return Math.PI / 2; // 90度(時計回り)
+        if (lockedEarlyZone === 'ccw') return -Math.PI / 2; // -90度(反時計回り)
+        return 0;
+    }
+    // ロック解除中は90度・-90度はブラウザ側の自動回転で保存画像も正しい向きになるため触らない。
+    // 180度(上下さかさま)だけ270度(=-90度と同じ結果)回転させる。
+    if (isUpsideDown) return -Math.PI / 2;
+    return 0;
+}
+
 function getPhotoCanvas() {
-    if (!isUpsideDown) return outputCanvas;
+    const rotateRad = getPhotoRotationRad();
+    if (rotateRad === 0) return outputCanvas;
+
+    const isQuarterTurn = Math.abs(rotateRad) === Math.PI / 2;
     const rotated = document.createElement('canvas');
-    rotated.width = outputCanvas.height;
-    rotated.height = outputCanvas.width;
+    rotated.width = isQuarterTurn ? outputCanvas.height : outputCanvas.width;
+    rotated.height = isQuarterTurn ? outputCanvas.width : outputCanvas.height;
     const rctx = rotated.getContext('2d');
     rctx.translate(rotated.width / 2, rotated.height / 2);
-    rctx.rotate(Math.PI / 2);
+    rctx.rotate(rotateRad);
     rctx.drawImage(outputCanvas, -outputCanvas.width / 2, -outputCanvas.height / 2);
     return rotated;
 }

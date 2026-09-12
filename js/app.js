@@ -709,6 +709,8 @@ function nextMonotonicTimestampMs() {
     return t;
 }
 
+let currentDetectionCoverScale = 1;
+
 function renderFrame(timestampMs) {
     if (faceLandmarker) {
         // 顔検出モデルは上向きの顔を前提としているため、上下さかさま時だけ検出用に
@@ -718,13 +720,22 @@ function renderFrame(timestampMs) {
         let detectionSource = video;
         if (isUpsideDown) {
             const rotateRad = -upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
-            if (rotatedVideoCanvas.width !== rawVideoHeight || rotatedVideoCanvas.height !== rawVideoWidth) {
-                rotatedVideoCanvas.width = rawVideoHeight;
-                rotatedVideoCanvas.height = rawVideoWidth;
+            // 検出用canvasは元映像と同じ幅・高さ(アスペクト比)を保つ。90度回転すると見た目の
+            // 縦横は入れ替わるため、そのままだとMediaPipeが画像の縦横比から想定するカメラの
+            // 画角(≒奥行き計算)が元映像とズレて、位置は合っているのにマスクの大きさだけ
+            // 実際の顔よりズレる(小さく見える)現象が起きる。そのため回転後の内容を
+            // 元と同じ縦横比のキャンバスいっぱいを覆うようスケールしてから描画する。
+            if (rotatedVideoCanvas.width !== rawVideoWidth || rotatedVideoCanvas.height !== rawVideoHeight) {
+                rotatedVideoCanvas.width = rawVideoWidth;
+                rotatedVideoCanvas.height = rawVideoHeight;
             }
+            // 覆うために顔もcoverScale倍だけ大きく映ってしまうので、その分は
+            // applyResults側でdetScaleを1/coverScale倍して打ち消す。
+            currentDetectionCoverScale = Math.max(rawVideoWidth / rawVideoHeight, rawVideoHeight / rawVideoWidth);
             rotatedVideoCtx.save();
-            rotatedVideoCtx.translate(rotatedVideoCanvas.width / 2, rotatedVideoCanvas.height / 2);
+            rotatedVideoCtx.translate(rawVideoWidth / 2, rawVideoHeight / 2);
             rotatedVideoCtx.rotate(rotateRad);
+            rotatedVideoCtx.scale(currentDetectionCoverScale, currentDetectionCoverScale);
             rotatedVideoCtx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2);
             rotatedVideoCtx.restore();
             detectionSource = rotatedVideoCanvas;
@@ -788,6 +799,7 @@ function applyResults(results, timestampMs) {
         if (isUpsideDown) {
             _detPos[i].applyQuaternion(_upsideDownCorrectionQuat);
             _detQuat[i].premultiply(_upsideDownCorrectionQuat);
+            _detScale[i].multiplyScalar(1 / currentDetectionCoverScale);
         }
     }
 

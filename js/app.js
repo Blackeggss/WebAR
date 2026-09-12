@@ -67,12 +67,6 @@ const _euler = new THREE.Euler();
 const _upsideDownAxis = new THREE.Vector3(0, 0, 1);
 const _upsideDownCorrectionQuat = new THREE.Quaternion();
 let lastTimestampSec = 0;
-// --- デバッグ用スクラッチ(原因切り分けが済んだら削除してください) ---
-const _debugPos = new THREE.Vector3();
-const _debugQuat = new THREE.Quaternion();
-const _debugScale = new THREE.Vector3();
-let lastArDebugLogSec = 0;
-// --- ここまで ---
 
 const _detPos = Array.from({ length: MAX_FACES }, () => new THREE.Vector3());
 const _detQuat = Array.from({ length: MAX_FACES }, () => new THREE.Quaternion());
@@ -234,6 +228,12 @@ let upsideDownDir = 0; // 0=通常 / 1=時計回り経由(135度)で到達 / -1=
 let isUpsideDown = false;
 
 function updateUpsideDownState(angleDeg) {
+    // 画面ロック中はボタン位置と同じく、上下さかさま検出も一切行わず通常の縦向き状態に固定する。
+    if (lockedMode) {
+        upsideDownDir = 0;
+        isUpsideDown = false;
+        return;
+    }
     if (upsideDownDir === 1) {
         const stillIn = angleDeg >= UPSIDE_DOWN_BOUNDARY - HYSTERESIS || angleDeg <= -UPSIDE_DOWN_BOUNDARY;
         if (!stillIn) upsideDownDir = 0;
@@ -798,21 +798,6 @@ function applyResults(results, timestampMs) {
 
     const faceCount = matrices ? Math.min(matrices.length, maskMeshes.length) : 0;
 
-    // --- デバッグ用(原因切り分けが済んだら削除してください) ---
-    if (faceCount > 0 && nowSec - lastArDebugLogSec > 1) {
-        lastArDebugLogSec = nowSec;
-        _matrix.fromArray(matrices[0].data);
-        _matrix.decompose(_debugPos, _debugQuat, _debugScale);
-        showToast(
-            `UD:${isUpsideDown} dir:${upsideDownDir}\n` +
-            `raw:${rawVideoWidth}x${rawVideoHeight} rot:${rotatedVideoCanvas.width}x${rotatedVideoCanvas.height}\n` +
-            `cs:${currentDetectionContainScale.toFixed(3)} asp:${camera.aspect.toFixed(3)}\n` +
-            `pos:${_debugPos.x.toFixed(1)},${_debugPos.y.toFixed(1)},${_debugPos.z.toFixed(1)}\n` +
-            `scale:${_debugScale.x.toFixed(3)},${_debugScale.y.toFixed(3)},${_debugScale.z.toFixed(3)}`
-        );
-    }
-    // --- ここまで ---
-
     if (isUpsideDown) {
         // 画像空間(Y下向き)とThree.jsのカメラ空間(Y上向き)はY軸の向きが逆なので、
         // 画面上で見た回転の向きは同じでもZ軸まわりの回転としては符号がそのまま一致する
@@ -970,10 +955,24 @@ function flashEffect() {
     flashOverlay.classList.add('flash-active');
 }
 
+// 上下さかさま時は保存用の画像だけ90度時計回りに回転させる(プレビューのoutputCanvas自体は無回転のまま)。
+function getPhotoCanvas() {
+    if (!isUpsideDown) return outputCanvas;
+    const rotated = document.createElement('canvas');
+    rotated.width = outputCanvas.height;
+    rotated.height = outputCanvas.width;
+    const rctx = rotated.getContext('2d');
+    rctx.translate(rotated.width / 2, rotated.height / 2);
+    rctx.rotate(Math.PI / 2);
+    rctx.drawImage(outputCanvas, -outputCanvas.width / 2, -outputCanvas.height / 2);
+    return rotated;
+}
+
 async function takePhoto() {
     flashEffect();
 
-    const blob = await new Promise((resolve) => outputCanvas.toBlob(resolve, 'image/png', 1.0));
+    const photoCanvas = getPhotoCanvas();
+    const blob = await new Promise((resolve) => photoCanvas.toBlob(resolve, 'image/png', 1.0));
     if (!blob) {
         showToast('撮影に失敗しました');
         return;

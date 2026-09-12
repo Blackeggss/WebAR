@@ -359,7 +359,7 @@ function commitAdjacentMove(targetIndex, dir) {
         isNavigating = false;
     };
     galleryTrack.addEventListener('transitionend', finish, { once: true });
-    setTimeout(finish, 420); // transitionendが発火しない環境向けの保険
+    setTimeout(finish, 210); // transitionendが発火しない環境向けの保険
 }
 
 // 隣接していない写真(サムネイルクリックで離れた写真を選んだ場合)はクロスフェードで切り替える
@@ -377,7 +377,7 @@ function crossfadeToIndex(targetIndex) {
         updateNavArrowState();
         updateDateDisplays(thumbList[currentIndex].createdAt);
         isNavigating = false;
-    }, 150);
+    }, 75);
 }
 
 // スワイプ・矢印ボタン・サムネイルクリックの共通の切り替え口。アニメーション付きで写真を切り替える

@@ -429,32 +429,40 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 #gallery_stage {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* トラック(前/現在/次の3枚を横並びにして指の動きに追従させる、iPhone風のスライダー) */
+#gallery_track {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), opacity 150ms ease;
+  will-change: transform;
+}
+
+#gallery_track.dragging {
+  transition: none;
+}
+
+.gallery_slide {
+  min-width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  touch-action: pan-y;
+  flex-shrink: 0;
 }
 
-#gallery_main_img {
+.gallery_slide img {
   height: 100%;
   width: auto;
   max-width: 100%;
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
-  transition: transform 220ms ease, opacity 220ms ease;
-}
-
-/* スライド送りアニメーション(切り替え直後の開始位置。次のフレームでtranslateX(0)/opacity1へ戻る) */
-#gallery_main_img.gallery_slide_from_right {
-  transform: translateX(6%);
-  opacity: 0;
-}
-
-#gallery_main_img.gallery_slide_from_left {
-  transform: translateX(-6%);
-  opacity: 0;
+  pointer-events: none;
 }
 
 /* 日時トースト: スマホ横・PC専用。画面最上部に一時表示する(半透明・自動で消える) */
@@ -705,7 +713,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
     padding-bottom: 12px;
   }
 
-  #gallery_main_img {
+  .gallery_slide img {
     width: auto;
     height: auto;
     max-width: 100%;

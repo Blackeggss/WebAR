@@ -825,12 +825,13 @@ function applyResults(results, timestampMs) {
             // MediaPipeはframe_height(検出canvasの高さ)だけを基準に固定画角(63度)から
             // ワールド座標を再構成する。今回は高さをrawVideoHeightに合わせつつ、
             // 90度回転した内容を収めるため中身をcontainScale倍に縮小して描いている。
-            // その結果、顔の見かけの画素サイズがcontainScale倍小さくなり、
-            // MediaPipeからは「本来より1/containScale倍遠く・大きい」座標(position・scale双方)
-            // として返ってくる。位置とスケールは同じ再構成パイプラインから出た値で、
-            // 同じ比率でズレているため、どちらもcontainScaleを掛けて実寸に戻す。
+            // その結果、顔の見かけの画素サイズがcontainScale倍小さくなり、MediaPipeからは
+            // 「本来より1/containScale倍遠い」position(特にZ)が返ってくる。
+            // (実機ログで確認済み: scaleは向き・状態に関わらず常に1,1,1固定で、
+            //  大きさの情報はscaleではなくpositionのZ(奥行き)にしか乗っていない。
+            //  そのためscale側を補正するのは誤りで、positionだけをcontainScale倍して
+            //  実際の奥行きに戻す)
             _detPos[i].multiplyScalar(currentDetectionContainScale);
-            _detScale[i].multiplyScalar(currentDetectionContainScale);
         }
     }
 

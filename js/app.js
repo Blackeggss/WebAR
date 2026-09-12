@@ -773,10 +773,13 @@ function applyResults(results, timestampMs) {
     const faceCount = matrices ? Math.min(matrices.length, maskMeshes.length) : 0;
 
     if (isUpsideDown) {
-        // 検出時に画像をrotateRad回転させているので、結果はその逆(-rotateRad)回転させて
+        // 画像空間(Y下向き)とThree.jsのカメラ空間(Y上向き)はY軸の向きが逆なので、
+        // 画面上で見た回転の向きは同じでもZ軸まわりの回転としては符号がそのまま一致する
+        // (Canvasのrotate(+θ)=画面上で時計回り は、カメラ空間ではZ軸まわり+θの回転に対応する)。
+        // そのため検出時に画像をrotateRad回転させた結果は、同じ+rotateRadだけ回転させて
         // 実際の(無回転の)映像の座標系に戻す。
         const rotateRad = -upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
-        _upsideDownCorrectionQuat.setFromAxisAngle(_upsideDownAxis, -rotateRad);
+        _upsideDownCorrectionQuat.setFromAxisAngle(_upsideDownAxis, rotateRad);
     }
 
     for (let i = 0; i < faceCount; i++) {

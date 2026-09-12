@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8";
+import { initGalleryDeferred, capturePhotoForGallery } from './gallery.js';
 
 const video = document.getElementById('webcam');
 const outputCanvas = document.getElementById('output_canvas');
@@ -947,15 +948,19 @@ async function takePhoto() {
         return;
     }
 
-    const fileName = `photo_${Date.now()}.png`;
+    const capturedAtMs = Date.now();
+    const fileName = `photo_${capturedAtMs}.png`;
     const file = new File([blob], fileName, { type: 'image/png' });
 
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
             await navigator.share({ files: [file] });
+            // サイトへの保存(IndexedDB)は表示速度に影響しないよう、既存処理の一番最後にawaitせず実行する
+            capturePhotoForGallery(blob, fileName, capturedAtMs);
             return;
         } catch (err) {
             if (err && err.name === 'AbortError') {
+                capturePhotoForGallery(blob, fileName, capturedAtMs);
                 return;
             }
         }
@@ -970,9 +975,15 @@ async function takePhoto() {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     showToast('ダウンロードしました');
+
+    // サイトへの保存(IndexedDB)は表示速度に影響しないよう、既存処理の一番最後にawaitせず実行する
+    capturePhotoForGallery(blob, fileName, capturedAtMs);
 }
 
 shutterBtn.addEventListener('click', takePhoto);
 
 // 実行
 initializeFaceLandmarker();
+
+// ギャラリー(IndexedDB)の初期化はアイドル時に遅延実行し、起動速度に影響させない
+initGalleryDeferred();

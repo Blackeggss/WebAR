@@ -32,17 +32,53 @@ html, body {
 }
 
 /* カメラ */
-/* leftはシャッターボタン(#shutter_btn、幅72px)自体が画面左右中央に来るようオフセット(72px/2=36px)している。
-   切り替えボタンはその右隣にgapを挟んで並ぶ */
+/* シャッターボタンを中心に、ギャラリーボタンとカメラ切り替えボタンが左右対称(同サイズ)に並ぶため、
+   コンテナ全体を中央寄せするだけでシャッターボタン自体も画面中央に来る */
 #camera_controls {
   position: fixed;
-  left: calc(50% - 36px);
+  left: 50%;
+  transform: translateX(-50%);
   bottom: max(28px, env(safe-area-inset-bottom, 28px));
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 16px;
   z-index: 40;
+}
+
+/* ギャラリーボタン(丸いサムネイル) */
+#gallery_btn {
+  position: static;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(120, 120, 120, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  padding: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+#gallery_btn:active {
+  background: rgba(120, 120, 120, 0.65);
+}
+
+#gallery_btn_thumb {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+#gallery_btn.has-photo {
+  background: transparent;
+}
+
+#gallery_btn.has-photo #gallery_btn_thumb {
+  display: block;
 }
 
 /* シャッターボタン */
@@ -258,7 +294,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   font-size: 14px;
   opacity: 0;
   pointer-events: none;
-  z-index: 60;
+  z-index: 95;
   transition: opacity 200ms ease, transform 200ms ease;
 }
 
@@ -365,4 +401,276 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   0%, 40% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
   45% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
   100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+}
+
+/* ==========================================================================
+   撮影済み写真ギャラリー
+   既定(このブロック)はPC・スマホ横画面向けのレイアウト。
+   スマホ縦画面向けの上書きは末尾の @media (pointer: coarse) and (orientation: portrait) 内。
+   ========================================================================== */
+#gallery_overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#gallery_overlay[hidden] {
+  display: none;
+}
+
+/* 画像表示エリア: PC・スマホ横画面は画面の縦幅いっぱいに画像高さを合わせる */
+#gallery_stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+#gallery_main_img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 日時トースト(半透明・一時表示。画像上部に重なってよい) */
+#gallery_date_toast {
+  position: absolute;
+  top: max(112px, calc(env(safe-area-inset-top, 0px) + 112px));
+  left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 14px;
+  padding: 8px 18px;
+  text-align: center;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease, transform 200ms ease;
+  z-index: 3;
+}
+
+#gallery_date_toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+#gallery_date_line {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+#gallery_time_line {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* 上部ツールバー(ダウンロード/全保存/削除)。PC・スマホ横は画像に重ねて上部に配置 */
+#gallery_toolbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: max(12px, env(safe-area-inset-top, 12px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  z-index: 2;
+  transition: opacity 200ms ease;
+}
+
+#gallery_download_one_btn,
+#gallery_delete_btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+
+#gallery_download_one_btn:active,
+#gallery_delete_btn:active {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+#gallery_download_all_btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: #fff;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+
+#gallery_download_all_btn:active {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+/* サムネイル行(過去の写真。左ほど古い)。PC・スマホ横は画像下部に重ねて配置 */
+#gallery_thumb_strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(12px, env(safe-area-inset-bottom, 12px));
+  display: flex;
+  gap: 8px;
+  padding: 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  justify-content: center;
+  z-index: 2;
+  transition: opacity 200ms ease;
+}
+
+#gallery_thumb_strip::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery_thumb_item {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 0;
+  flex-shrink: 0;
+  border: 2px solid transparent;
+  opacity: 0.6;
+  background: rgba(255, 255, 255, 0.1);
+  touch-action: manipulation;
+}
+
+.gallery_thumb_item.selected {
+  border-color: #fff;
+  opacity: 1;
+}
+
+.gallery_thumb_item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 閉じるボタン */
+#gallery_close_btn {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top, 12px));
+  right: max(12px, env(safe-area-inset-right, 12px));
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 4;
+  touch-action: manipulation;
+  transition: opacity 200ms ease;
+}
+
+/* PC・スマホ横: 閉じるボタンとツールバーの縦位置が被らないよう、ツールバーを少し下げる */
+#gallery_toolbar {
+  top: max(56px, calc(env(safe-area-inset-top, 0px) + 56px));
+}
+
+/* 没入モード: 画像だけを表示し、UIをすべて隠す */
+#gallery_overlay.immersive #gallery_toolbar,
+#gallery_overlay.immersive #gallery_thumb_strip,
+#gallery_overlay.immersive #gallery_close_btn {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   スマホ縦画面向けの上書き
+   画像は上部に一定の間隔をあけて表示し、その下にサムネイル行→ツールバーを縦に並べる
+   ========================================================================== */
+@media (pointer: coarse) and (orientation: portrait) {
+  #gallery_overlay {
+    display: flex;
+    flex-direction: column;
+  }
+
+  #gallery_stage {
+    position: relative;
+    inset: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-top: max(56px, calc(env(safe-area-inset-top, 0px) + 56px));
+    padding-bottom: 12px;
+  }
+
+  #gallery_main_img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  #gallery_date_toast {
+    top: max(64px, calc(env(safe-area-inset-top, 0px) + 64px));
+  }
+
+  #gallery_thumb_strip {
+    position: relative;
+    inset: auto;
+    bottom: auto;
+    flex-shrink: 0;
+    padding: 8px 16px;
+    justify-content: flex-start;
+  }
+
+  #gallery_toolbar {
+    position: relative;
+    inset: auto;
+    top: auto;
+    flex-shrink: 0;
+    padding: 4px 20px max(16px, env(safe-area-inset-bottom, 16px));
+  }
+
+  #gallery_close_btn {
+    z-index: 4;
+  }
+
+  #gallery_overlay.immersive #gallery_stage {
+    flex: 1 1 auto;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  #gallery_overlay.immersive #gallery_stage,
+  #gallery_overlay.immersive #gallery_main_img {
+    position: absolute;
+    inset: 0;
+  }
+
+  #gallery_overlay.immersive #gallery_main_img {
+    width: auto;
+    height: 100%;
+    margin: auto;
+  }
 }

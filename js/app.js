@@ -5,6 +5,10 @@ const video = document.getElementById('webcam');
 const outputCanvas = document.getElementById('output_canvas');
 const ctx = outputCanvas.getContext('2d', { alpha: false });
 const arCanvas = document.createElement('canvas');
+// 上下さかさま時に顔検出モデル(上向きの顔を想定)向けだけに90度回転した映像を渡すための作業用canvas。
+// 合成結果(renderComposite)には一切使わない。
+const rotatedVideoCanvas = document.createElement('canvas');
+const rotatedVideoCtx = rotatedVideoCanvas.getContext('2d', { alpha: false });
 const shutterBtn = document.getElementById('shutter_btn');
 const switchCameraBtn = document.getElementById('switch_camera_btn');
 const cameraPicker = document.getElementById('camera_picker');
@@ -58,6 +62,10 @@ let maskMeshes = [];
 
 const _matrix = new THREE.Matrix4();
 const _euler = new THREE.Euler();
+// 上下さかさま時、検出用に回転させた映像から得た結果を実際の(無回転の)映像の
+// 座標系に戻すための補正用スクラッチ(Z軸=画面奥行き軸まわりに、検出時とは逆向きに回転させる)。
+const _upsideDownAxis = new THREE.Vector3(0, 0, 1);
+const _upsideDownCorrectionQuat = new THREE.Quaternion();
 let lastTimestampSec = 0;
 
 const _detPos = Array.from({ length: MAX_FACES }, () => new THREE.Vector3());
@@ -84,7 +92,7 @@ function initThree() {
     }, false);
 
     const textureLoader = new THREE.TextureLoader();
-    const maskTexture = textureLoader.load('assets/base.png');
+    const maskTexture = textureLoader.load('assets/base_copy.png');
     maskTexture.colorSpace = THREE.SRGBColorSpace;
     maskTexture.generateMipmaps = false;
     maskTexture.minFilter = THREE.LinearFilter;
@@ -198,6 +206,8 @@ const ROTATION_CCW_ANGLES = [90];
 
 const ROLL_SIGN = 1;
 const GAMMA_SIGN = 1;
+// 上下さかさま時、顔検出用に映像を回転させる向き。実機で90度の左右が逆に感じる場合は-1にしてください。
+const DETECTION_ROTATION_SIGN = 1;
 
 // 縦持ちを0度、時計回りを正として3分割 (-45〜45:縦, 45〜180:cw, -45〜-180:ccw)
 // HYSTERESISは境界付近でのちらつき防止用の最小限の遊び
@@ -207,6 +217,36 @@ const HYSTERESIS = 5;
 // 45〜135を通って180(-180)に達した場合は-135まで、-45〜-135を通って-180(180)に達した場合は135まで、
 // 同じ向きを維持したまま折り返しをまたげるようにする境界値。
 const ZONE_BOUNDARY_WRAP_HOLD = 135;
+
+// 端末が上下さかさま(±135度以降)になったかどうか、およびどちら回りで到達したか。
+// ボタン位置(rotationState)や回転ロックの状態とは独立して扱う(顔検出用の補正は物理的な
+// 向きだけで決まるべきで、lockedMode/orientationCheckDoneの状態に関わらず常に判定する)。
+// 135度と-180/180の境界をまたぐジャンプはclassifyAngleと同じ考え方で、到達した方向を
+// 135度を割り込むまで維持する。
+const UPSIDE_DOWN_BOUNDARY = 135;
+let upsideDownDir = 0; // 0=通常 / 1=時計回り経由(135度)で到達 / -1=反時計回り経由(-135度)で到達
+let isUpsideDown = false;
+
+function updateUpsideDownState(angleDeg) {
+    // 画面ロック中はボタン位置と同じく、上下さかさま検出も一切行わず通常の縦向き状態に固定する。
+    if (lockedMode) {
+        upsideDownDir = 0;
+        isUpsideDown = false;
+        return;
+    }
+    if (upsideDownDir === 1) {
+        const stillIn = angleDeg >= UPSIDE_DOWN_BOUNDARY - HYSTERESIS || angleDeg <= -UPSIDE_DOWN_BOUNDARY;
+        if (!stillIn) upsideDownDir = 0;
+    } else if (upsideDownDir === -1) {
+        const stillIn = angleDeg <= -(UPSIDE_DOWN_BOUNDARY - HYSTERESIS) || angleDeg >= UPSIDE_DOWN_BOUNDARY;
+        if (!stillIn) upsideDownDir = 0;
+    } else if (angleDeg >= UPSIDE_DOWN_BOUNDARY + HYSTERESIS) {
+        upsideDownDir = 1;
+    } else if (angleDeg <= -(UPSIDE_DOWN_BOUNDARY + HYSTERESIS)) {
+        upsideDownDir = -1;
+    }
+    isUpsideDown = upsideDownDir !== 0;
+}
 
 let rollAvailable = false;
 let latestRollDeg = 0;
@@ -436,6 +476,7 @@ function handleDeviceMotion(event) {
     // 第2引数(Y)の符号を反転: 実機では「縦持ち(0度)」と「上下逆さま(180度)」が
     // 逆に計算されていたため補正(左右cw/ccwの判定軸には影響しない)
     latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
+    updateUpsideDownState(latestRollDeg);
 
     if (!orientationCheckDone) {
         runOrientationCheck();
@@ -674,9 +715,47 @@ function nextMonotonicTimestampMs() {
     return t;
 }
 
+let currentDetectionContainScale = 1;
+
 function renderFrame(timestampMs) {
     if (faceLandmarker) {
-        const results = faceLandmarker.detectForVideo(video, timestampMs);
+        // 顔検出モデルは上向きの顔を前提としているため、上下さかさま時だけ検出用に
+        // 90度回転させた映像を渡す(表示側の映像・合成結果には影響しない)。
+        // 反時計回り経由(-135度, upsideDownDir=-1)で到達したら時計回りに90度、
+        // 時計回り経由(135度, upsideDownDir=1)で到達したら反時計回りに90度回転させる。
+        let detectionSource = video;
+        if (isUpsideDown) {
+            const rotateRad = -upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
+            // 実機ログで判明: MediaPipeの奥行き計算はcanvasの「高さ(px)」ではなく
+            // 「アスペクト比(width/height)」に依存している。前回はcanvasの高さだけを
+            // rawVideoHeightに合わせたが、幅は縮小後の内容にぴったり合わせていたため
+            // アスペクト比が(横向きの)元映像と全く違う値(縦向きに近い比率)になってしまい、
+            // 上下さかさま時のZが縦向き相当の値として返ってきていた。
+            // そこで検出用canvas自体を元映像と全く同じ幅・高さ(=同じアスペクト比)にし、
+            // 90度回転した内容はクロップせず、その中に収まるよう均等に縮小して描く
+            // (余白ができるが、MediaPipeへの入力なので見た目上は問題ない)。
+            if (rotatedVideoCanvas.width !== rawVideoWidth || rotatedVideoCanvas.height !== rawVideoHeight) {
+                rotatedVideoCanvas.width = rawVideoWidth;
+                rotatedVideoCanvas.height = rawVideoHeight;
+            }
+            const rotatedContentWidth = rawVideoHeight; // 90度回転後の内容の自然な幅(=元の高さ)
+            const rotatedContentHeight = rawVideoWidth; // 90度回転後の内容の自然な高さ(=元の幅)
+            currentDetectionContainScale = Math.min(
+                rawVideoWidth / rotatedContentWidth,
+                rawVideoHeight / rotatedContentHeight
+            );
+            // 縮小した分だけ顔もcontainScale倍小さく映ってしまうので、その分はapplyResults側で
+            // positionをcontainScale倍して実際の奥行きに戻す(scaleは常に1固定なので触らない)。
+            rotatedVideoCtx.save();
+            rotatedVideoCtx.clearRect(0, 0, rawVideoWidth, rawVideoHeight);
+            rotatedVideoCtx.translate(rawVideoWidth / 2, rawVideoHeight / 2);
+            rotatedVideoCtx.rotate(rotateRad);
+            rotatedVideoCtx.scale(currentDetectionContainScale, currentDetectionContainScale);
+            rotatedVideoCtx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2);
+            rotatedVideoCtx.restore();
+            detectionSource = rotatedVideoCanvas;
+        }
+        const results = faceLandmarker.detectForVideo(detectionSource, timestampMs);
         applyResults(results, timestampMs);
     }
     renderer.render(scene, camera);
@@ -719,9 +798,38 @@ function applyResults(results, timestampMs) {
 
     const faceCount = matrices ? Math.min(matrices.length, maskMeshes.length) : 0;
 
+    if (isUpsideDown) {
+        // 画像空間(Y下向き)とThree.jsのカメラ空間(Y上向き)はY軸の向きが逆なので、
+        // 画面上で見た回転の向きは同じでもZ軸まわりの回転としては符号がそのまま一致する
+        // (Canvasのrotate(+θ)=画面上で時計回り は、カメラ空間ではZ軸まわり+θの回転に対応する)。
+        // そのため検出時に画像をrotateRad回転させた結果は、同じ+rotateRadだけ回転させて
+        // 実際の(無回転の)映像の座標系に戻す。
+        const rotateRad = -upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
+        _upsideDownCorrectionQuat.setFromAxisAngle(_upsideDownAxis, rotateRad);
+    }
+
     for (let i = 0; i < faceCount; i++) {
         _matrix.fromArray(matrices[i].data);
         _matrix.decompose(_detPos[i], _detQuat[i], _detScale[i]);
+        if (isUpsideDown) {
+            _detPos[i].applyQuaternion(_upsideDownCorrectionQuat);
+            _detQuat[i].premultiply(_upsideDownCorrectionQuat);
+            // MediaPipeはframe_height(検出canvasの高さ)だけを基準に固定画角(63度)から
+            // ワールド座標を再構成する。今回は高さをrawVideoHeightに合わせつつ、
+            // 90度回転した内容を収めるため中身をcontainScale倍に縮小して描いている。
+            // その結果、顔の見かけの画素サイズがcontainScale倍小さくなり、MediaPipeからは
+            // 「本来より1/containScale倍遠い」position(特にZ)が返ってくる。
+            // (実機ログで確認済み: scaleは向き・状態に関わらず常に1,1,1固定で、
+            //  大きさの情報はscaleではなくpositionのZ(奥行き)にしか乗っていない)
+            //
+            // ただしX・Yはフレーム内の正規化2D位置から直接決まる値で、アスペクト比に
+            // 起因するこの奥行き誤差とは別経路。X・Yまで一律にcontainScale倍すると、
+            // 本来正しいはずの値まで原点方向に縮めてしまい、実機で「中央寄りになる」
+            // 「顔の移動への追従が弱くなる」症状が出た(_upsideDownCorrectionQuatはZ軸回りの
+            // 回転なのでZ成分には影響しない=Z軸まわりの回転とZ方向の奥行き補正は独立)。
+            // そのためZ成分だけをcontainScale倍して実際の奥行きに戻し、X・Yには触れない。
+            _detPos[i].z *= currentDetectionContainScale;
+        }
     }
 
     const assignedSlotOfDetection = new Array(faceCount).fill(-1);
@@ -847,10 +955,24 @@ function flashEffect() {
     flashOverlay.classList.add('flash-active');
 }
 
+// 上下さかさま時は保存用の画像だけ90度時計回りに回転させる(プレビューのoutputCanvas自体は無回転のまま)。
+function getPhotoCanvas() {
+    if (!isUpsideDown) return outputCanvas;
+    const rotated = document.createElement('canvas');
+    rotated.width = outputCanvas.height;
+    rotated.height = outputCanvas.width;
+    const rctx = rotated.getContext('2d');
+    rctx.translate(rotated.width / 2, rotated.height / 2);
+    rctx.rotate(Math.PI / 2);
+    rctx.drawImage(outputCanvas, -outputCanvas.width / 2, -outputCanvas.height / 2);
+    return rotated;
+}
+
 async function takePhoto() {
     flashEffect();
 
-    const blob = await new Promise((resolve) => outputCanvas.toBlob(resolve, 'image/png', 1.0));
+    const photoCanvas = getPhotoCanvas();
+    const blob = await new Promise((resolve) => photoCanvas.toBlob(resolve, 'image/png', 1.0));
     if (!blob) {
         showToast('撮影に失敗しました');
         return;

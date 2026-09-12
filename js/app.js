@@ -5,8 +5,7 @@ const video = document.getElementById('webcam');
 const outputCanvas = document.getElementById('output_canvas');
 const ctx = outputCanvas.getContext('2d', { alpha: false });
 const arCanvas = document.createElement('canvas');
-// 上下さかさま時に顔検出モデル(上向きの顔を想定)向けだけに90度回転した映像を渡すための作業用canvas。
-// 合成結果(renderComposite)には一切使わない。
+// 上下さかさま時に顔検出用だけ90度回転した映像を渡す作業用canvas(合成結果には使わない)
 const rotatedVideoCanvas = document.createElement('canvas');
 const rotatedVideoCtx = rotatedVideoCanvas.getContext('2d', { alpha: false });
 const shutterBtn = document.getElementById('shutter_btn');
@@ -62,8 +61,7 @@ let maskMeshes = [];
 
 const _matrix = new THREE.Matrix4();
 const _euler = new THREE.Euler();
-// 上下さかさま時、検出用に回転させた映像から得た結果を実際の(無回転の)映像の
-// 座標系に戻すための補正用スクラッチ(Z軸=画面奥行き軸まわりに、検出時とは逆向きに回転させる)。
+// 検出用に回転させた結果を元の映像座標系に戻す補正用スクラッチ(Z軸回転)
 const _upsideDownAxis = new THREE.Vector3(0, 0, 1);
 const _upsideDownCorrectionQuat = new THREE.Quaternion();
 let lastTimestampSec = 0;
@@ -72,7 +70,14 @@ const _detPos = Array.from({ length: MAX_FACES }, () => new THREE.Vector3());
 const _detQuat = Array.from({ length: MAX_FACES }, () => new THREE.Quaternion());
 const _detScale = Array.from({ length: MAX_FACES }, () => new THREE.Vector3());
 
-let slotActive = new Array(MAX_FACES).fill(false);
+const slotActive = new Array(MAX_FACES).fill(false);
+// 毎フレームのGCを避けるため使い回すスクラッチ(applyResults内でのみ使用)
+const _maskOffsetScratch = new THREE.Vector3();
+const _assignedSlotOfDetection = new Array(MAX_FACES).fill(-1);
+const _slotUsedThisFrame = new Array(MAX_FACES).fill(false);
+const _nextSlotActive = new Array(MAX_FACES).fill(false);
+const _candidatePairPool = Array.from({ length: MAX_FACES * MAX_FACES }, () => ({ i: 0, j: 0, dist: 0 }));
+const _candidatePairs = [];
 
 // 3D空間の初期化
 function initThree() {
@@ -165,9 +170,7 @@ function getVideoConstraints() {
             ? { deviceId: { exact: selectedDeviceId }, ...base }
             : { facingMode: currentFacingMode, ...base };
     }
-    // 画面の向きに関わらず常に同じ解像度(スマホカメラの標準的な16:9)を要求する。
-    // これによりrawVideoWidth/Heightが回転で変わらなくなり、getOutputCanvasSize側で
-    // 3:4/4:3どちらにクロップしても常に十分な余白があるため、細く切り取られる問題が起きない。
+    // 画面の向きに関わらず常に同じ解像度(16:9)を要求し、クロップ時に細く切り取られる問題を防ぐ
     return { facingMode: currentFacingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } };
 }
 function getOutputCanvasSize(dispWidth, dispHeight) {
@@ -191,16 +194,7 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
     }
 }
 
-// 端末の物理的な回転方向を検出する('none'=縦持ち / 'cw'=時計回り(45〜180度) / 'ccw'=反時計回り(-45〜-180度))
-// 135〜180度/-135〜-180度(上下逆さま付近)は独立した状態を持たず、直前のcw/ccwの位置を維持する
-//
-// screen.orientation / window.orientation はOSが要約した回転状態のため、
-// 180度(上下逆さま)を経由する回転でOS側が古い値のまま固まることがある(特にiPhone)。
-// また deviceorientation の gamma 値は「端末を垂直に構えている」前提の値のため、
-// 顔合わせのために端末を前後に傾ける(beta変化)とgamma自体が歪み、誤検知の原因になる。
-// そこで、iPhone純正のUI回転と同じ「重力ベクトルを画面平面に投影してロール角を出す」方式
-// (devicemotionのaccelerationIncludingGravity)を最優先で使い、前後の傾きの影響を受けないようにする。
-// ※実機で左右の対応が逆に感じる場合はROLL_SIGN/GAMMA_SIGNを-1に、角度方式の場合は下の2配列を入れ替えてください
+// 端末の物理回転方向を検出('none'/'cw'/'ccw')。screen.orientationは180度経由で値が固まることがあるため、重力ベクトルからロール角を出す方式(devicemotion)を優先使用(左右が逆なら ROLL_SIGN/GAMMA_SIGN を-1に)
 const ROTATION_CW_ANGLES = [270];
 const ROTATION_CCW_ANGLES = [90];
 
@@ -209,20 +203,13 @@ const GAMMA_SIGN = 1;
 // 上下さかさま時、顔検出用に映像を回転させる向き。実機で90度の左右が逆に感じる場合は-1にしてください。
 const DETECTION_ROTATION_SIGN = 1;
 
-// 縦持ちを0度、時計回りを正として3分割 (-45〜45:縦, 45〜180:cw, -45〜-180:ccw)
-// HYSTERESISは境界付近でのちらつき防止用の最小限の遊び
+// 縦持ちを0度として3分割(-45〜45:縦,45〜180:cw,-45〜-180:ccw)。HYSTERESISは境界のちらつき防止
 const ZONE_BOUNDARY_1 = 45;
 const HYSTERESIS = 5;
-// atan2の出力は180度と-180度の境界で数値上不連続にジャンプする(実際の回転は連続している)。
-// 45〜135を通って180(-180)に達した場合は-135まで、-45〜-135を通って-180(180)に達した場合は135まで、
-// 同じ向きを維持したまま折り返しをまたげるようにする境界値。
+// atan2は±180度境界で不連続にジャンプするため、折り返しをまたいでも135度まで同じ向きを維持する境界値
 const ZONE_BOUNDARY_WRAP_HOLD = 135;
 
-// 端末が上下さかさま(±135度以降)になったかどうか、およびどちら回りで到達したか。
-// ボタン位置(rotationState)や回転ロックの状態とは独立して扱う(顔検出用の補正は物理的な
-// 向きだけで決まるべきで、lockedMode/orientationCheckDoneの状態に関わらず常に判定する)。
-// 135度と-180/180の境界をまたぐジャンプはclassifyAngleと同じ考え方で、到達した方向を
-// 135度を割り込むまで維持する。
+// 端末が上下さかさま(±135度以降)かとその到達方向。ボタン位置やロック状態とは独立に常に判定する
 const UPSIDE_DOWN_BOUNDARY = 135;
 let upsideDownDir = 0; // 0=通常 / 1=時計回り経由(135度)で到達 / -1=反時計回り経由(-135度)で到達
 let isUpsideDown = false;
@@ -242,8 +229,7 @@ function updateUpsideDownState(angleDeg) {
     isUpsideDown = upsideDownDir !== 0;
 }
 
-// 画面ロック中専用: 45度境界のホールド判定(135度以降はisUpsideDown/upsideDownDirが担う)。
-// ロックなしの通常時はブラウザ自身のカメラ映像の自動回転で45〜135度は吸収されるため使わない。
+// 画面ロック中専用の45度境界判定(135度以降はisUpsideDownが担当、ロックなしでは未使用)
 let lockedEarlyZone = 'none'; // 'none' | 'cw' | 'ccw'
 
 function updateLockedEarlyZone(angleDeg) {
@@ -258,11 +244,7 @@ function updateLockedEarlyZone(angleDeg) {
     }
 }
 
-// 検出用に回転させる角度(ラジアン)を決める。
-// ロックなし: ブラウザ本体のCSS/カメラ回転が45〜135度分を肩代わりしてくれるので、
-//            135度以降(isUpsideDown)だけ既存の90度補正を行う(実機検証済み)。
-// ロック中: ブラウザ側の回転が一切効かないため、45度から自前で90度、135度からは
-//          自前で180度(=90度分×2)を補正する必要がある。
+// 検出用回転角度を決定: ロックなしはブラウザが45〜135度分を肩代わりするため135度以降だけ90度補正、ロック中は自前で45度から90度・135度から180度を補正する
 function getDetectionRotationRad() {
     if (lockedMode) {
         if (isUpsideDown) return Math.PI;
@@ -319,25 +301,13 @@ function computeRotationState() {
 
 function updateOutputCanvasSize() {
     if (!rawVideoWidth || !rawVideoHeight) return;
-    // 実際の描画(renderComposite)は元映像を無回転のまま中央クロップして敷き詰めるだけなので、
-    // ここでは元映像のネイティブ寸法をそのまま渡す(縦横を入れ替えない)。
-    // landscapeMqlによる縦横比の切り替えはgetOutputCanvasSize内のtargetRatioが担う。
+    // renderCompositeは無回転で中央クロップするだけなので、元映像のネイティブ寸法をそのまま渡す
     const { width, height } = getOutputCanvasSize(rawVideoWidth, rawVideoHeight);
     outputCanvas.width = width;
     outputCanvas.height = height;
 }
 
-// OSの画面ロック(回転ロック)がかかっていると、物理的に端末を回転させてもページのCSSレイアウト
-// (matchMediaのorientation)は変化しない。センサーは画面ロックと無関係に動き続けるため、
-// 「実際に50度以上はっきり傾いた瞬間に、ページの向きが追従しているかどうか」を見ればロックの有無を
-// 判定できる。追従していれば(=一致)即座にロックなしと確定する。ただし追従にはOS側のネイティブな
-// 回転リフローの遅延があり、センサーが50度に達する速さの方が勝ることがあるため、まだ追従していない
-// 場合はすぐにロック確定とはせず、ORIENTATION_LOCK_GRACE_MSだけ待って再確認する
-// (この間に追従すればロックなし、追従しなければロック中と確定する)。
-//
-// ユーザーに「傾けてください」と案内する専用の確認ステップは設けず、通常利用中に自然に端末が
-// 50度以上傾いた最初の瞬間にバックグラウンドで1回だけ判定する。ロック中なら0度の状態に固定した
-// まま以後は何もしない、ロックなしなら通常の追従動作に切り替える。
+// 画面ロック中はCSSレイアウトが回転に追従しないことを利用してロックの有無を判定(50度傾いた時点でCSSが追従したか見て、追従なしがGRACE_MS続けばロック確定)
 const ORIENTATION_LOCK_CHECK_ANGLE = 50; // この角度をはっきり超えたらページの追従状況を見始める
 const ORIENTATION_LOCK_GRACE_MS = 500; // OS側のネイティブ回転リフローが追いつくのを待つ猶予
 let orientationCheckDone = false;
@@ -355,9 +325,7 @@ function finishOrientationCheck(locked) {
     }
 }
 
-// 端末が自然に50度をはっきり超えたら、ページの向きが追従しているかを見る。
-// 追従していれば即座にロックなしと確定。追従していなければ、OS側のリフロー遅延の可能性があるため
-// ORIENTATION_LOCK_GRACE_MSだけ待って再確認し、それでも追従しなければロック中と確定する。
+// 50度を超えたらページ追従の有無を見て、追従していなければGRACE_MS待ってロック判定を確定する
 function runOrientationCheck() {
     if (orientationCheckDone || !rollAvailable) return;
     if (Math.abs(latestRollDeg) < ORIENTATION_LOCK_CHECK_ANGLE) return;
@@ -398,9 +366,7 @@ function applyRotationState() {
     updateOutputCanvasSize();
 }
 
-// video要素の実際の解像度が変わった際に、そこから派生する各種サイズを再同期する。
-// getUserMediaでの新規取得時(loadeddata)と、既存トラックのライブ解像度変更(resize)の
-// 両方から呼ばれる共通処理。
+// video要素の実解像度が変わった際に派生サイズを再同期する共通処理(loadeddata/resize両方から呼ばれる)
 function syncVideoDimensions() {
     const videoWidth = video.videoWidth;
     const videoHeight = video.videoHeight;
@@ -419,8 +385,7 @@ function syncVideoDimensions() {
     camera.aspect = videoWidth / videoHeight;
     camera.updateProjectionMatrix();
 }
-// srcObjectの差し替えだけでなく、既存トラックのapplyConstraintsによる解像度変更でも
-// video.videoWidth/Heightが変わったタイミングでこのイベントが発火する。
+// srcObject差し替えだけでなくapplyConstraintsでの解像度変更時もこのイベントが発火する
 video.addEventListener('resize', syncVideoDimensions);
 
 function startCamera() {
@@ -453,11 +418,7 @@ function startCamera() {
     });
 }
 
-// 画面回転時、カメラを完全に再取得(getUserMediaのやり直し)せず、既存トラックの解像度だけを
-// その場で変更する。applyConstraintsは通信を一切伴わない端末ローカルな処理(カメラハードウェアの
-// 再設定のみ)なので、フルの再起動より速く、回線速度による遅延も発生しない。
-// (通信が発生するのはモデル/ライブラリの初回読み込みだけで、カメラ解像度の変更とは無関係)
-// 一部端末はライブでの解像度変更に対応していないため、その場合のみ通常の再起動にフォールバックする。
+// 画面回転時はgetUserMediaをやり直さずapplyConstraintsで解像度だけその場変更(通信を伴わないため高速、非対応端末のみ再起動にフォールバック)
 function resyncCameraForOrientation() {
     const track = currentStream && currentStream.getVideoTracks()[0];
     if (!track) return;
@@ -481,12 +442,7 @@ function scheduleRotationUpdate() {
     }, 150);
 }
 
-// 重力ベクトル(画面のX/Y平面への投影)からロール角を求める。
-// 前後の傾き(pitch)を変えても、端末自身のZ軸(画面を貫く軸)まわりの回転(=ロール)には影響しないため、
-// 顔を画角に収めるために端末を前後に傾ける操作では誤検知しない。
-// 顔合わせのため端末をやや後ろに傾けて構えると重力のXY成分が小さくなり、
-// atan2の結果がノイズで揺れやすくなる(=縦のつもりでも左右に振れて見える原因)。
-// 平滑化(指数移動平均)とやや広めの無効化しきい値でこれを抑える。
+// 重力ベクトルからロール角を求める(前後の傾きに影響されない)。ノイズ対策に平滑化と無効化しきい値を使用
 let smoothedAx = 0;
 let smoothedAy = 1;
 const ROLL_SMOOTHING = 0.15;
@@ -498,8 +454,7 @@ function handleDeviceMotion(event) {
     smoothedAy += (acc.y - smoothedAy) * ROLL_SMOOTHING;
     if (Math.hypot(smoothedAx, smoothedAy) < 2) return; // ほぼ水平(画面が真上/真下)で向きが定義できない場合は無視
     rollAvailable = true;
-    // 第2引数(Y)の符号を反転: 実機では「縦持ち(0度)」と「上下逆さま(180度)」が
-    // 逆に計算されていたため補正(左右cw/ccwの判定軸には影響しない)
+    // 第2引数(Y)の符号反転: 縦持ち(0度)と上下逆さま(180度)が逆算されていたための補正
     latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
     updateUpsideDownState(latestRollDeg);
     updateLockedEarlyZone(latestRollDeg);
@@ -512,8 +467,7 @@ function handleDeviceMotion(event) {
     applyRotationState();
 }
 
-// devicemotionが使えない端末向けのフォールバック
-// (gamma単体では折り返し等の判定に使えないため、ロック判定自体はタイムアウトに任せる)
+// devicemotion非対応端末向けフォールバック(gamma単体では折り返し判定不可のためロック判定はタイムアウト任せ)
 function handleDeviceOrientation(event) {
     if (rollAvailable || typeof event.gamma !== 'number') return;
     gammaAvailable = true;
@@ -569,14 +523,7 @@ function showTapToStartUI() {
     }, { once: true });
 }
 
-// カメラ許可が確定した(=getUserMediaが成功した)タイミングで呼ばれる。ユーザーに「傾けてください」
-// と案内する専用ステップは設けず、センサーを起動して通常利用の裏で静かに判定する(runOrientationCheck)。
-//
-// iOSはモーション許可の取得に実際のタップ操作が必須(初回訪問時はタップなしで許可ダイアログを
-// 出すことができない)。ただし一度許可済みなら、タップなし(ユーザー操作なし)で
-// requestPermission()を呼んでも即座に'granted'で解決される。そこでまず静かに1回試し、
-// 既に許可済みならタップなしでそのままセンサーを起動する。未許可(主に初回訪問)の場合だけ、
-// タップが必要なことが伝わるよう「タップして開始」を表示してタップを待つ。
+// カメラ許可確定時に呼ばれる。iOSは初回のみタップ必須のため、まず無タップで試し、未許可なら「タップして開始」を表示する
 function onCameraReady() {
     if (!needsMotionPermission) {
         startRotationSensors();
@@ -603,8 +550,7 @@ if (isMobile) {
         window.addEventListener('orientationchange', scheduleRotationUpdate);
     }
     landscapeMql.addEventListener('change', () => {
-        // 生映像の解像度を今の向きに合わせて再同期する(完了後、resizeイベント経由で
-        // syncVideoDimensions()がupdateOutputCanvasSize()まで呼ぶ)。
+        // 生映像の解像度を今の向きに再同期する(完了後resizeイベント経由でsyncVideoDimensionsが呼ばれる)
         scheduleOrientationResync();
         scheduleRotationUpdate();
     });
@@ -746,9 +692,7 @@ let currentDetectionRotateRad = 0;
 
 function renderFrame(timestampMs) {
     if (faceLandmarker) {
-        // 顔検出モデルは上向きの顔を前提としているため、必要な時だけ検出用に回転させた
-        // 映像を渡す(表示側の映像・合成結果には影響しない)。回転角度の決め方は
-        // getDetectionRotationRad()を参照(ロックの有無で必要な回転量が変わる)。
+        // 顔検出は上向きの顔が前提のため、必要時だけ回転させた映像を渡す(表示側には影響しない、角度はgetDetectionRotationRad参照)
         let detectionSource = video;
         currentDetectionRotateRad = getDetectionRotationRad();
         currentDetectionContainScale = 1;
@@ -759,11 +703,7 @@ function renderFrame(timestampMs) {
             }
             const isQuarterTurn = Math.abs(currentDetectionRotateRad) === Math.PI / 2;
             if (isQuarterTurn) {
-                // 90度回転: 見た目の縦横が入れ替わるため、実機ログで判明した
-                // 「MediaPipeの奥行き計算はcanvasのアスペクト比に依存する」という点を踏まえ、
-                // canvas自体は元映像と全く同じ幅・高さ(=同じアスペクト比)にし、
-                // 回転後の内容はクロップせずその中に収まるよう均等に縮小して描く
-                // (余白ができるが、検出用画像なので見た目上は問題ない)。
+                // 90度回転: MediaPipeの奥行き計算はcanvasのアスペクト比に依存するため、canvasは元映像と同じ寸法にし内容は縮小して収める
                 const rotatedContentWidth = rawVideoHeight; // 90度回転後の内容の自然な幅(=元の高さ)
                 const rotatedContentHeight = rawVideoWidth; // 90度回転後の内容の自然な高さ(=元の幅)
                 currentDetectionContainScale = Math.min(
@@ -771,8 +711,7 @@ function renderFrame(timestampMs) {
                     rawVideoHeight / rotatedContentHeight
                 );
             }
-            // 180度回転は縦横が入れ替わらないため、元と全く同じ寸法のまま縮小不要
-            // (currentDetectionContainScaleは1のまま)。
+            // 180度回転は縦横が入れ替わらないため縮小不要(currentDetectionContainScaleは1のまま)
             rotatedVideoCtx.save();
             rotatedVideoCtx.clearRect(0, 0, rawVideoWidth, rawVideoHeight);
             rotatedVideoCtx.translate(rawVideoWidth / 2, rawVideoHeight / 2);
@@ -826,11 +765,7 @@ function applyResults(results, timestampMs) {
     const faceCount = matrices ? Math.min(matrices.length, maskMeshes.length) : 0;
 
     if (currentDetectionRotateRad !== 0) {
-        // 画像空間(Y下向き)とThree.jsのカメラ空間(Y上向き)はY軸の向きが逆なので、
-        // 画面上で見た回転の向きは同じでもZ軸まわりの回転としては符号がそのまま一致する
-        // (Canvasのrotate(+θ)=画面上で時計回り は、カメラ空間ではZ軸まわり+θの回転に対応する)。
-        // そのため検出時に画像をcurrentDetectionRotateRad回転させた結果は、同じ角度だけ
-        // 回転させて実際の(無回転の)映像の座標系に戻す。
+        // 画像空間とThree.jsカメラ空間はY軸が逆だが符号はそのまま一致するため、検出時と同じ角度で逆補正して元の座標系に戻す
         _upsideDownCorrectionQuat.setFromAxisAngle(_upsideDownAxis, currentDetectionRotateRad);
     }
 
@@ -840,58 +775,51 @@ function applyResults(results, timestampMs) {
         if (currentDetectionRotateRad !== 0) {
             _detPos[i].applyQuaternion(_upsideDownCorrectionQuat);
             _detQuat[i].premultiply(_upsideDownCorrectionQuat);
-            // MediaPipeはframe_height(検出canvasの高さ)だけを基準に固定画角(63度)から
-            // ワールド座標を再構成する。今回は高さをrawVideoHeightに合わせつつ、
-            // 90度回転した内容を収めるため中身をcontainScale倍に縮小して描いている。
-            // その結果、顔の見かけの画素サイズがcontainScale倍小さくなり、MediaPipeからは
-            // 「本来より1/containScale倍遠い」position(特にZ)が返ってくる。
-            // (実機ログで確認済み: scaleは向き・状態に関わらず常に1,1,1固定で、
-            //  大きさの情報はscaleではなくpositionのZ(奥行き)にしか乗っていない)
-            //
-            // ただしX・Yはフレーム内の正規化2D位置から直接決まる値で、アスペクト比に
-            // 起因するこの奥行き誤差とは別経路。X・Yまで一律にcontainScale倍すると、
-            // 本来正しいはずの値まで原点方向に縮めてしまい、実機で「中央寄りになる」
-            // 「顔の移動への追従が弱くなる」症状が出た(_upsideDownCorrectionQuatはZ軸回りの
-            // 回転なのでZ成分には影響しない=Z軸まわりの回転とZ方向の奥行き補正は独立)。
-            // そのためZ成分だけをcontainScale倍して実際の奥行きに戻し、X・Yには触れない。
+            // MediaPipeは検出canvasの高さ基準で奥行きを計算するため、containScale分の縮小でZだけが遠くズレる(scaleは常に1固定、X・Yは別経路なので触るとズレる)。Z成分だけcontainScale倍して戻す
             _detPos[i].z *= currentDetectionContainScale;
         }
     }
 
-    const assignedSlotOfDetection = new Array(faceCount).fill(-1);
-    const slotUsedThisFrame = new Array(maskMeshes.length).fill(false);
+    // 以下、GC対策で毎フレームnew Array/new Objectせず使い回しのスクラッチに書き込む
+    for (let i = 0; i < faceCount; i++) _assignedSlotOfDetection[i] = -1;
+    for (let j = 0; j < maskMeshes.length; j++) _slotUsedThisFrame[j] = false;
 
-    const candidatePairs = [];
+    _candidatePairs.length = 0;
+    let poolIndex = 0;
     for (let i = 0; i < faceCount; i++) {
         for (let j = 0; j < maskMeshes.length; j++) {
             if (!slotActive[j]) continue;
             const dist = _detPos[i].distanceTo(maskMeshes[j].position);
             if (dist <= TRACKING_MAX_MATCH_DISTANCE) {
-                candidatePairs.push({ i, j, dist });
+                const pair = _candidatePairPool[poolIndex++];
+                pair.i = i;
+                pair.j = j;
+                pair.dist = dist;
+                _candidatePairs.push(pair);
             }
         }
     }
-    candidatePairs.sort((a, b) => a.dist - b.dist);
+    _candidatePairs.sort((a, b) => a.dist - b.dist);
 
-    for (const pair of candidatePairs) {
-        if (assignedSlotOfDetection[pair.i] !== -1) continue;
-        if (slotUsedThisFrame[pair.j]) continue;
-        assignedSlotOfDetection[pair.i] = pair.j;
-        slotUsedThisFrame[pair.j] = true;
+    for (const pair of _candidatePairs) {
+        if (_assignedSlotOfDetection[pair.i] !== -1) continue;
+        if (_slotUsedThisFrame[pair.j]) continue;
+        _assignedSlotOfDetection[pair.i] = pair.j;
+        _slotUsedThisFrame[pair.j] = true;
     }
 
     for (let i = 0; i < faceCount; i++) {
-        if (assignedSlotOfDetection[i] !== -1) continue;
-        const freeSlot = slotUsedThisFrame.indexOf(false);
+        if (_assignedSlotOfDetection[i] !== -1) continue;
+        const freeSlot = _slotUsedThisFrame.indexOf(false);
         if (freeSlot === -1) continue;
-        assignedSlotOfDetection[i] = freeSlot;
-        slotUsedThisFrame[freeSlot] = true;
+        _assignedSlotOfDetection[i] = freeSlot;
+        _slotUsedThisFrame[freeSlot] = true;
     }
 
-    const nextSlotActive = new Array(maskMeshes.length).fill(false);
+    for (let j = 0; j < maskMeshes.length; j++) _nextSlotActive[j] = false;
 
     for (let i = 0; i < faceCount; i++) {
-        const slot = assignedSlotOfDetection[i];
+        const slot = _assignedSlotOfDetection[i];
         if (slot === -1) continue;
 
         const mesh = maskMeshes[slot];
@@ -907,7 +835,7 @@ function applyResults(results, timestampMs) {
             Math.abs(yawDeg) > HIDE_YAW_THRESHOLD_DEG ||
             Math.abs(pitchDeg) > HIDE_PITCH_THRESHOLD_DEG;
 
-        nextSlotActive[slot] = true;
+        _nextSlotActive[slot] = true;
 
         if (facingAway) {
             mesh.visible = false;
@@ -918,7 +846,8 @@ function applyResults(results, timestampMs) {
         mesh.visible = true;
 
         if (MASK_OFFSET.lengthSq() > 0) {
-            targetPos.add(MASK_OFFSET.clone().applyQuaternion(targetQuat));
+            _maskOffsetScratch.copy(MASK_OFFSET).applyQuaternion(targetQuat);
+            targetPos.add(_maskOffsetScratch);
         }
 
         mesh.position.lerp(targetPos, posT);
@@ -927,11 +856,11 @@ function applyResults(results, timestampMs) {
     }
 
     for (let j = 0; j < maskMeshes.length; j++) {
-        if (!nextSlotActive[j]) {
+        if (!_nextSlotActive[j]) {
             maskMeshes[j].visible = false;
         }
+        slotActive[j] = _nextSlotActive[j];
     }
-    slotActive = nextSlotActive;
 }
 
 // 合成描画
@@ -939,8 +868,7 @@ function renderComposite(w, h, timeSec) {
     ctx.clearRect(0, 0, w, h);
     ctx.save();
 
-    // 出力キャンバスのアスペクト比に合わせて元映像(arCanvasも同じ座標系)を中央クロップし、
-    // キャンバス全体に等倍でスケールして敷き詰める(検出側のrawVideoWidth/Heightはそのまま利用)
+    // 出力キャンバスのアスペクト比に合わせて元映像を中央クロップし、キャンバス全体に敷き詰める
     const canvasRatio = w / h;
     const videoRatio = rawVideoWidth / rawVideoHeight;
     let sx, sy, sWidth, sHeight;
@@ -981,8 +909,7 @@ function flashEffect() {
     flashOverlay.classList.add('flash-active');
 }
 
-// 上下さかさま時は保存用の画像だけ90度時計回りに回転させる(プレビューのoutputCanvas自体は無回転のまま)。
-// 保存用画像の回転角度(ラジアン)。ロックの有無・現在の向きの組み合わせで実機検証した値。
+// 保存用画像だけの回転角度(ラジアン)。ロックの有無・向きの組み合わせで実機検証した値(プレビュー自体は無回転のまま)
 function getPhotoRotationRad() {
     if (lockedMode) {
         if (isUpsideDown) return Math.PI; // 180度
@@ -990,8 +917,7 @@ function getPhotoRotationRad() {
         if (lockedEarlyZone === 'ccw') return -Math.PI / 2; // -90度(反時計回り)
         return 0;
     }
-    // ロック解除中は90度・-90度はブラウザ側の自動回転で保存画像も正しい向きになるため触らない。
-    // 180度(上下さかさま)だけ270度(=-90度と同じ結果)回転させる。
+    // ロック解除中は90度・-90度はブラウザの自動回転で正しくなるため触らず、180度だけ270度(=-90度)回転させる
     if (isUpsideDown) return -Math.PI / 2;
     return 0;
 }

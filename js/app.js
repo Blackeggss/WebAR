@@ -228,12 +228,6 @@ let upsideDownDir = 0; // 0=通常 / 1=時計回り経由(135度)で到達 / -1=
 let isUpsideDown = false;
 
 function updateUpsideDownState(angleDeg) {
-    // 画面ロック中はボタン位置と同じく、上下さかさま検出も一切行わず通常の縦向き状態に固定する。
-    if (lockedMode) {
-        upsideDownDir = 0;
-        isUpsideDown = false;
-        return;
-    }
     if (upsideDownDir === 1) {
         const stillIn = angleDeg >= UPSIDE_DOWN_BOUNDARY - HYSTERESIS || angleDeg <= -UPSIDE_DOWN_BOUNDARY;
         if (!stillIn) upsideDownDir = 0;
@@ -246,6 +240,37 @@ function updateUpsideDownState(angleDeg) {
         upsideDownDir = -1;
     }
     isUpsideDown = upsideDownDir !== 0;
+}
+
+// 画面ロック中専用: 45度境界のホールド判定(135度以降はisUpsideDown/upsideDownDirが担う)。
+// ロックなしの通常時はブラウザ自身のカメラ映像の自動回転で45〜135度は吸収されるため使わない。
+let lockedEarlyZone = 'none'; // 'none' | 'cw' | 'ccw'
+
+function updateLockedEarlyZone(angleDeg) {
+    if (lockedEarlyZone === 'cw') {
+        if (angleDeg < ZONE_BOUNDARY_1 - HYSTERESIS) lockedEarlyZone = 'none';
+    } else if (lockedEarlyZone === 'ccw') {
+        if (angleDeg > -(ZONE_BOUNDARY_1 - HYSTERESIS)) lockedEarlyZone = 'none';
+    } else if (angleDeg > ZONE_BOUNDARY_1 + HYSTERESIS) {
+        lockedEarlyZone = 'cw';
+    } else if (angleDeg < -(ZONE_BOUNDARY_1 + HYSTERESIS)) {
+        lockedEarlyZone = 'ccw';
+    }
+}
+
+// 検出用に回転させる角度(ラジアン)を決める。
+// ロックなし: ブラウザ本体のCSS/カメラ回転が45〜135度分を肩代わりしてくれるので、
+//            135度以降(isUpsideDown)だけ既存の90度補正を行う(実機検証済み)。
+// ロック中: ブラウザ側の回転が一切効かないため、45度から自前で90度、135度からは
+//          自前で180度(=90度分×2)を補正する必要がある。
+function getDetectionRotationRad() {
+    if (lockedMode) {
+        if (isUpsideDown) return Math.PI;
+        if (lockedEarlyZone === 'cw') return Math.PI / 2;
+        if (lockedEarlyZone === 'ccw') return -Math.PI / 2;
+        return 0;
+    }
+    return isUpsideDown ? (-upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2)) : 0;
 }
 
 let rollAvailable = false;
@@ -477,6 +502,7 @@ function handleDeviceMotion(event) {
     // 逆に計算されていたため補正(左右cw/ccwの判定軸には影響しない)
     latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
     updateUpsideDownState(latestRollDeg);
+    updateLockedEarlyZone(latestRollDeg);
 
     if (!orientationCheckDone) {
         runOrientationCheck();
@@ -716,40 +742,41 @@ function nextMonotonicTimestampMs() {
 }
 
 let currentDetectionContainScale = 1;
+let currentDetectionRotateRad = 0;
 
 function renderFrame(timestampMs) {
     if (faceLandmarker) {
-        // 顔検出モデルは上向きの顔を前提としているため、上下さかさま時だけ検出用に
-        // 90度回転させた映像を渡す(表示側の映像・合成結果には影響しない)。
-        // 反時計回り経由(-135度, upsideDownDir=-1)で到達したら時計回りに90度、
-        // 時計回り経由(135度, upsideDownDir=1)で到達したら反時計回りに90度回転させる。
+        // 顔検出モデルは上向きの顔を前提としているため、必要な時だけ検出用に回転させた
+        // 映像を渡す(表示側の映像・合成結果には影響しない)。回転角度の決め方は
+        // getDetectionRotationRad()を参照(ロックの有無で必要な回転量が変わる)。
         let detectionSource = video;
-        if (isUpsideDown) {
-            const rotateRad = -upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
-            // 実機ログで判明: MediaPipeの奥行き計算はcanvasの「高さ(px)」ではなく
-            // 「アスペクト比(width/height)」に依存している。前回はcanvasの高さだけを
-            // rawVideoHeightに合わせたが、幅は縮小後の内容にぴったり合わせていたため
-            // アスペクト比が(横向きの)元映像と全く違う値(縦向きに近い比率)になってしまい、
-            // 上下さかさま時のZが縦向き相当の値として返ってきていた。
-            // そこで検出用canvas自体を元映像と全く同じ幅・高さ(=同じアスペクト比)にし、
-            // 90度回転した内容はクロップせず、その中に収まるよう均等に縮小して描く
-            // (余白ができるが、MediaPipeへの入力なので見た目上は問題ない)。
+        currentDetectionRotateRad = getDetectionRotationRad();
+        currentDetectionContainScale = 1;
+        if (currentDetectionRotateRad !== 0) {
             if (rotatedVideoCanvas.width !== rawVideoWidth || rotatedVideoCanvas.height !== rawVideoHeight) {
                 rotatedVideoCanvas.width = rawVideoWidth;
                 rotatedVideoCanvas.height = rawVideoHeight;
             }
-            const rotatedContentWidth = rawVideoHeight; // 90度回転後の内容の自然な幅(=元の高さ)
-            const rotatedContentHeight = rawVideoWidth; // 90度回転後の内容の自然な高さ(=元の幅)
-            currentDetectionContainScale = Math.min(
-                rawVideoWidth / rotatedContentWidth,
-                rawVideoHeight / rotatedContentHeight
-            );
-            // 縮小した分だけ顔もcontainScale倍小さく映ってしまうので、その分はapplyResults側で
-            // positionをcontainScale倍して実際の奥行きに戻す(scaleは常に1固定なので触らない)。
+            const isQuarterTurn = Math.abs(currentDetectionRotateRad) === Math.PI / 2;
+            if (isQuarterTurn) {
+                // 90度回転: 見た目の縦横が入れ替わるため、実機ログで判明した
+                // 「MediaPipeの奥行き計算はcanvasのアスペクト比に依存する」という点を踏まえ、
+                // canvas自体は元映像と全く同じ幅・高さ(=同じアスペクト比)にし、
+                // 回転後の内容はクロップせずその中に収まるよう均等に縮小して描く
+                // (余白ができるが、検出用画像なので見た目上は問題ない)。
+                const rotatedContentWidth = rawVideoHeight; // 90度回転後の内容の自然な幅(=元の高さ)
+                const rotatedContentHeight = rawVideoWidth; // 90度回転後の内容の自然な高さ(=元の幅)
+                currentDetectionContainScale = Math.min(
+                    rawVideoWidth / rotatedContentWidth,
+                    rawVideoHeight / rotatedContentHeight
+                );
+            }
+            // 180度回転は縦横が入れ替わらないため、元と全く同じ寸法のまま縮小不要
+            // (currentDetectionContainScaleは1のまま)。
             rotatedVideoCtx.save();
             rotatedVideoCtx.clearRect(0, 0, rawVideoWidth, rawVideoHeight);
             rotatedVideoCtx.translate(rawVideoWidth / 2, rawVideoHeight / 2);
-            rotatedVideoCtx.rotate(rotateRad);
+            rotatedVideoCtx.rotate(currentDetectionRotateRad);
             rotatedVideoCtx.scale(currentDetectionContainScale, currentDetectionContainScale);
             rotatedVideoCtx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2);
             rotatedVideoCtx.restore();
@@ -798,20 +825,19 @@ function applyResults(results, timestampMs) {
 
     const faceCount = matrices ? Math.min(matrices.length, maskMeshes.length) : 0;
 
-    if (isUpsideDown) {
+    if (currentDetectionRotateRad !== 0) {
         // 画像空間(Y下向き)とThree.jsのカメラ空間(Y上向き)はY軸の向きが逆なので、
         // 画面上で見た回転の向きは同じでもZ軸まわりの回転としては符号がそのまま一致する
         // (Canvasのrotate(+θ)=画面上で時計回り は、カメラ空間ではZ軸まわり+θの回転に対応する)。
-        // そのため検出時に画像をrotateRad回転させた結果は、同じ+rotateRadだけ回転させて
-        // 実際の(無回転の)映像の座標系に戻す。
-        const rotateRad = -upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
-        _upsideDownCorrectionQuat.setFromAxisAngle(_upsideDownAxis, rotateRad);
+        // そのため検出時に画像をcurrentDetectionRotateRad回転させた結果は、同じ角度だけ
+        // 回転させて実際の(無回転の)映像の座標系に戻す。
+        _upsideDownCorrectionQuat.setFromAxisAngle(_upsideDownAxis, currentDetectionRotateRad);
     }
 
     for (let i = 0; i < faceCount; i++) {
         _matrix.fromArray(matrices[i].data);
         _matrix.decompose(_detPos[i], _detQuat[i], _detScale[i]);
-        if (isUpsideDown) {
+        if (currentDetectionRotateRad !== 0) {
             _detPos[i].applyQuaternion(_upsideDownCorrectionQuat);
             _detQuat[i].premultiply(_upsideDownCorrectionQuat);
             // MediaPipeはframe_height(検出canvasの高さ)だけを基準に固定画角(63度)から

@@ -796,18 +796,13 @@ function applyResults(results, timestampMs) {
         lastArDebugLogSec = nowSec;
         _matrix.fromArray(matrices[0].data);
         _matrix.decompose(_debugPos, _debugQuat, _debugScale);
-        console.log('[AR-DEBUG]', {
-            isUpsideDown,
-            upsideDownDir,
-            rawVideoWidth,
-            rawVideoHeight,
-            rotatedVideoCanvasW: rotatedVideoCanvas.width,
-            rotatedVideoCanvasH: rotatedVideoCanvas.height,
-            currentDetectionContainScale,
-            cameraAspect: camera.aspect,
-            rawDetPos: _debugPos.toArray(),
-            rawDetScale: _debugScale.toArray(),
-        });
+        showToast(
+            `UD:${isUpsideDown} dir:${upsideDownDir}\n` +
+            `raw:${rawVideoWidth}x${rawVideoHeight} rot:${rotatedVideoCanvas.width}x${rotatedVideoCanvas.height}\n` +
+            `cs:${currentDetectionContainScale.toFixed(3)} asp:${camera.aspect.toFixed(3)}\n` +
+            `pos:${_debugPos.x.toFixed(1)},${_debugPos.y.toFixed(1)},${_debugPos.z.toFixed(1)}\n` +
+            `scale:${_debugScale.x.toFixed(3)},${_debugScale.y.toFixed(3)},${_debugScale.z.toFixed(3)}`
+        );
     }
     // --- ここまで ---
 

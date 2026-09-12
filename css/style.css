@@ -407,6 +407,9 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
    撮影済み写真ギャラリー
    既定(このブロック)はPC・スマホ横画面向けのレイアウト。
    スマホ縦画面向けの上書きは末尾の @media (pointer: coarse) and (orientation: portrait) 内。
+
+   フォーカス(没入)モードは画像の位置・サイズを一切変えず、周辺UIのopacityだけを
+   0にする方式にしている(通常時との間で画像が動いて見えないようにするため)。
    ========================================================================== */
 #gallery_overlay {
   position: fixed;
@@ -440,12 +443,24 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
+  transition: transform 220ms ease, opacity 220ms ease;
 }
 
-/* 日時トースト(半透明・一時表示。画像上部に重なってよい) */
+/* スライド送りアニメーション(切り替え直後の開始位置。次のフレームでtranslateX(0)/opacity1へ戻る) */
+#gallery_main_img.gallery_slide_from_right {
+  transform: translateX(6%);
+  opacity: 0;
+}
+
+#gallery_main_img.gallery_slide_from_left {
+  transform: translateX(-6%);
+  opacity: 0;
+}
+
+/* 日時トースト: スマホ横・PC専用。画面最上部に一時表示する(半透明・自動で消える) */
 #gallery_date_toast {
   position: absolute;
-  top: max(112px, calc(env(safe-area-inset-top, 0px) + 112px));
+  top: max(14px, env(safe-area-inset-top, 14px));
   left: 50%;
   transform: translateX(-50%) translateY(6px);
   background: rgba(0, 0, 0, 0.6);
@@ -456,7 +471,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   opacity: 0;
   pointer-events: none;
   transition: opacity 200ms ease, transform 200ms ease;
-  z-index: 3;
+  z-index: 5;
 }
 
 #gallery_date_toast.show {
@@ -474,21 +489,14 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   opacity: 0.85;
 }
 
-/* 上部ツールバー(ダウンロード/全保存/削除)。PC・スマホ横は画像に重ねて上部に配置 */
-#gallery_toolbar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: max(12px, env(safe-area-inset-top, 12px));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  z-index: 2;
-  transition: opacity 200ms ease;
+/* PC専用の前後矢印。既定(スマホ)では非表示 */
+#gallery_prev_arrow_btn,
+#gallery_next_arrow_btn {
+  display: none;
 }
 
-#gallery_download_one_btn,
+/* ダウンロード・削除ボタン共通の見た目(丸ボタン) */
+#gallery_download_btn,
 #gallery_delete_btn {
   width: 44px;
   height: 44px;
@@ -502,36 +510,70 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   padding: 0;
   flex-shrink: 0;
   touch-action: manipulation;
+  transition: opacity 200ms ease, background 150ms ease, color 150ms ease, border-color 150ms ease, width 150ms ease, border-radius 150ms ease, padding 150ms ease;
 }
 
-#gallery_download_one_btn:active,
+#gallery_download_btn:active,
 #gallery_delete_btn:active {
   background: rgba(0, 0, 0, 0.75);
 }
 
-#gallery_download_all_btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  color: #fff;
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 13px;
+/* 削除確認状態(赤文字の確認ボタンに変化。もう一度押すと実際に削除する) */
+.gallery_delete_confirm_label {
+  display: none;
+  font-size: 11px;
   white-space: nowrap;
-  touch-action: manipulation;
 }
 
-#gallery_download_all_btn:active {
-  background: rgba(0, 0, 0, 0.75);
+#gallery_delete_btn.confirm {
+  width: auto;
+  padding: 0 14px;
+  border-radius: 999px;
+  border-color: #ff5252;
+  color: #ff5252;
+  background: rgba(70, 0, 0, 0.6);
 }
 
-/* サムネイル行(過去の写真。左ほど古い)。PC・スマホ横は画像下部に重ねて配置 */
+#gallery_delete_btn.confirm .gallery_delete_icon {
+  display: none;
+}
+
+#gallery_delete_btn.confirm .gallery_delete_confirm_label {
+  display: inline;
+}
+
+/* PC・スマホ横: ダウンロード/削除ボタンを画面右下に縦に並べる。日時バッジは使わない */
+#gallery_toolbar {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#gallery_download_btn,
+#gallery_delete_btn {
+  position: absolute;
+  pointer-events: auto;
+  right: max(16px, env(safe-area-inset-right, 16px));
+}
+
+#gallery_download_btn {
+  bottom: calc(max(16px, env(safe-area-inset-bottom, 16px)) + 44px + 10px);
+}
+
+#gallery_delete_btn {
+  bottom: max(16px, env(safe-area-inset-bottom, 16px));
+}
+
+#gallery_date_badge {
+  display: none;
+}
+
+/* サムネイル行(過去の写真。左ほど古い)。PC・スマホ横は画像下部に重ねて配置(右下のボタン列を避ける) */
 #gallery_thumb_strip {
   position: absolute;
   left: 0;
-  right: 0;
+  right: 76px;
   bottom: max(12px, env(safe-area-inset-bottom, 12px));
   display: flex;
   gap: 8px;
@@ -592,17 +634,56 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   transition: opacity 200ms ease;
 }
 
-/* PC・スマホ横: 閉じるボタンとツールバーの縦位置が被らないよう、ツールバーを少し下げる */
-#gallery_toolbar {
-  top: max(56px, calc(env(safe-area-inset-top, 0px) + 56px));
-}
-
-/* 没入モード: 画像だけを表示し、UIをすべて隠す */
+/* フォーカス(没入)モード: 画像以外のUIを隠す(画像自体の位置・サイズは変えない) */
 #gallery_overlay.immersive #gallery_toolbar,
 #gallery_overlay.immersive #gallery_thumb_strip,
-#gallery_overlay.immersive #gallery_close_btn {
+#gallery_overlay.immersive #gallery_close_btn,
+#gallery_overlay.immersive #gallery_prev_arrow_btn,
+#gallery_overlay.immersive #gallery_next_arrow_btn {
   opacity: 0;
   pointer-events: none;
+}
+
+/* PC専用: 左右中央に前後矢印ボタンを表示 */
+@media (pointer: fine) {
+  #gallery_prev_arrow_btn,
+  #gallery_next_arrow_btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    color: #fff;
+    padding: 0;
+    z-index: 3;
+    touch-action: manipulation;
+    transition: opacity 200ms ease, background 150ms ease;
+  }
+
+  #gallery_prev_arrow_btn:active,
+  #gallery_next_arrow_btn:active {
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  #gallery_prev_arrow_btn {
+    left: max(16px, env(safe-area-inset-left, 16px));
+  }
+
+  #gallery_next_arrow_btn {
+    right: max(16px, env(safe-area-inset-right, 16px));
+  }
+
+  #gallery_prev_arrow_btn:disabled,
+  #gallery_next_arrow_btn:disabled {
+    opacity: 0.25;
+    pointer-events: none;
+  }
 }
 
 /* ==========================================================================
@@ -631,13 +712,15 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
     max-height: 100%;
   }
 
+  /* 縦画面は常時表示の日時バッジを使うため、上部の一時トーストは表示しない */
   #gallery_date_toast {
-    top: max(64px, calc(env(safe-area-inset-top, 0px) + 64px));
+    display: none;
   }
 
   #gallery_thumb_strip {
     position: relative;
     inset: auto;
+    right: auto;
     bottom: auto;
     flex-shrink: 0;
     padding: 8px 16px;
@@ -647,30 +730,48 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   #gallery_toolbar {
     position: relative;
     inset: auto;
-    top: auto;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     flex-shrink: 0;
     padding: 4px 20px max(16px, env(safe-area-inset-bottom, 16px));
   }
 
+  #gallery_download_btn,
+  #gallery_delete_btn {
+    position: static;
+  }
+
+  /* 常時表示の日時バッジ(旧「すべて保存」ボタンの位置。ボタンと同じ丸デザイン) */
+  #gallery_date_badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    color: #fff;
+    line-height: 1.15;
+    flex-shrink: 0;
+  }
+
+  #gallery_date_badge_date {
+    font-size: 9px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  #gallery_date_badge_time {
+    font-size: 8px;
+    opacity: 0.85;
+    white-space: nowrap;
+  }
+
   #gallery_close_btn {
     z-index: 4;
-  }
-
-  #gallery_overlay.immersive #gallery_stage {
-    flex: 1 1 auto;
-    padding-top: 0;
-    padding-bottom: 0;
-  }
-
-  #gallery_overlay.immersive #gallery_stage,
-  #gallery_overlay.immersive #gallery_main_img {
-    position: absolute;
-    inset: 0;
-  }
-
-  #gallery_overlay.immersive #gallery_main_img {
-    width: auto;
-    height: 100%;
-    margin: auto;
   }
 }

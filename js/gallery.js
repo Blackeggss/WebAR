@@ -17,11 +17,14 @@ const galleryMainImg = document.getElementById('gallery_main_img');
 const galleryDateToast = document.getElementById('gallery_date_toast');
 const galleryDateLine = document.getElementById('gallery_date_line');
 const galleryTimeLine = document.getElementById('gallery_time_line');
+const galleryDateBadgeDate = document.getElementById('gallery_date_badge_date');
+const galleryDateBadgeTime = document.getElementById('gallery_date_badge_time');
 const galleryThumbStrip = document.getElementById('gallery_thumb_strip');
-const galleryDownloadOneBtn = document.getElementById('gallery_download_one_btn');
-const galleryDownloadAllBtn = document.getElementById('gallery_download_all_btn');
+const galleryDownloadBtn = document.getElementById('gallery_download_btn');
 const galleryDeleteBtn = document.getElementById('gallery_delete_btn');
 const galleryCloseBtn = document.getElementById('gallery_close_btn');
+const galleryPrevArrowBtn = document.getElementById('gallery_prev_arrow_btn');
+const galleryNextArrowBtn = document.getElementById('gallery_next_arrow_btn');
 const sharedToastEl = document.getElementById('toast');
 
 // メモリ上のサムネイル一覧(古い→新しい順)。フル解像度画像はDBから都度取得する。
@@ -99,15 +102,6 @@ function dbGetPhotoFull(id) {
     }));
 }
 
-function dbGetAllPhotosFull() {
-    return getDB().then((db) => new Promise((resolve, reject) => {
-        const tx = db.transaction(PHOTOS_STORE, 'readonly');
-        const req = tx.objectStore(PHOTOS_STORE).getAll();
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => reject(req.error);
-    }));
-}
-
 // ---- 共有トースト(#toast)の簡易表示。カメラ側のトーストと表示ロジックは独立させている ----
 let sharedToastTimer = null;
 function showLocalToast(message) {
@@ -118,12 +112,16 @@ function showLocalToast(message) {
     sharedToastTimer = setTimeout(() => sharedToastEl.classList.remove('toast-show'), 2200);
 }
 
-// ---- 日時トースト(ギャラリー内、画像上部に一時表示) ----
+// ---- 日時表示: スマホ縦は常時表示バッジ、スマホ横/PCは画面最上部の一時トースト ----
 let dateToastTimer = null;
-function showDateToast(createdAtMs) {
+function updateDateDisplays(createdAtMs) {
     const d = new Date(createdAtMs);
-    const dateStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+    const dateStr = `${d.getMonth() + 1}月${d.getDate()}日`;
     const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+    galleryDateBadgeDate.textContent = dateStr;
+    galleryDateBadgeTime.textContent = timeStr;
+
     galleryDateLine.textContent = dateStr;
     galleryTimeLine.textContent = timeStr;
     galleryDateToast.classList.add('show');
@@ -171,7 +169,10 @@ function renderThumbStrip() {
         img.src = getOrCreateThumbUrl(meta);
         img.alt = '';
         btn.appendChild(img);
-        btn.addEventListener('click', () => showPhotoAtIndex(i));
+        btn.addEventListener('click', () => {
+            if (i === currentIndex) return;
+            showPhotoAtIndex(i, i > currentIndex ? 1 : -1);
+        });
         galleryThumbStrip.appendChild(btn);
     });
     scrollSelectedThumbIntoView();
@@ -189,7 +190,13 @@ function scrollSelectedThumbIntoView() {
     if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
 
-async function loadFullImageForIndex(index) {
+function updateNavArrowState() {
+    galleryPrevArrowBtn.disabled = currentIndex <= 0;
+    galleryNextArrowBtn.disabled = currentIndex >= thumbList.length - 1;
+}
+
+// direction: 1=次(新しい方、右からスライドイン) / -1=前(古い方、左からスライドイン) / 0=アニメーションなし
+async function loadFullImageForIndex(index, direction) {
     const meta = thumbList[index];
     if (!meta) return;
     const myToken = ++loadToken;
@@ -197,25 +204,41 @@ async function loadFullImageForIndex(index) {
     if (myToken !== loadToken || !record) return;
     const url = URL.createObjectURL(record.blob);
     const prevUrl = mainImgObjectUrl;
-    galleryMainImg.src = url;
+
+    if (direction !== 0) {
+        galleryMainImg.style.transition = 'none';
+        galleryMainImg.classList.remove('gallery_slide_from_right', 'gallery_slide_from_left');
+        galleryMainImg.classList.add(direction > 0 ? 'gallery_slide_from_right' : 'gallery_slide_from_left');
+        galleryMainImg.src = url;
+        void galleryMainImg.offsetWidth; // 強制リフローで開始位置を確定させる
+        galleryMainImg.style.transition = '';
+        requestAnimationFrame(() => {
+            galleryMainImg.classList.remove('gallery_slide_from_right', 'gallery_slide_from_left');
+        });
+    } else {
+        galleryMainImg.src = url;
+    }
+
     mainImgObjectUrl = url;
     if (prevUrl) URL.revokeObjectURL(prevUrl);
 }
 
-function showPhotoAtIndex(index) {
+function showPhotoAtIndex(index, direction = 0) {
     if (index < 0 || index >= thumbList.length) return;
     currentIndex = index;
-    loadFullImageForIndex(index);
+    resetDeleteConfirm();
+    loadFullImageForIndex(index, direction);
     updateThumbStripSelection();
-    showDateToast(thumbList[index].createdAt);
+    updateNavArrowState();
+    updateDateDisplays(thumbList[index].createdAt);
 }
 
 function showNextPhoto() {
-    if (currentIndex < thumbList.length - 1) showPhotoAtIndex(currentIndex + 1);
+    if (currentIndex < thumbList.length - 1) showPhotoAtIndex(currentIndex + 1, 1);
 }
 
 function showPrevPhoto() {
-    if (currentIndex > 0) showPhotoAtIndex(currentIndex - 1);
+    if (currentIndex > 0) showPhotoAtIndex(currentIndex - 1, -1);
 }
 
 function toggleImmersive() {
@@ -252,6 +275,25 @@ async function openGalleryViewer() {
 function closeGalleryViewer() {
     galleryOverlay.hidden = true;
     galleryOverlay.classList.remove('immersive');
+    resetDeleteConfirm();
+}
+
+// ---- 削除確認 ----
+let deleteConfirmTimer = null;
+function resetDeleteConfirm() {
+    clearTimeout(deleteConfirmTimer);
+    galleryDeleteBtn.classList.remove('confirm');
+}
+
+function onDeleteBtnClick() {
+    if (!galleryDeleteBtn.classList.contains('confirm')) {
+        galleryDeleteBtn.classList.add('confirm');
+        clearTimeout(deleteConfirmTimer);
+        deleteConfirmTimer = setTimeout(resetDeleteConfirm, 3000);
+        return;
+    }
+    resetDeleteConfirm();
+    deleteCurrentPhoto();
 }
 
 async function deleteCurrentPhoto() {
@@ -287,45 +329,28 @@ function triggerBlobDownload(blob, fileName) {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// 写真フォルダへの保存を促すため、可能な場合は共有シート(Web Share API)を優先する
 async function downloadCurrentPhoto() {
     const meta = thumbList[currentIndex];
     if (!meta) return;
     const record = await dbGetPhotoFull(meta.id).catch(() => null);
     if (!record) {
-        showLocalToast('ダウンロードに失敗しました');
+        showLocalToast('保存に失敗しました');
         return;
     }
+
+    const file = new File([record.blob], meta.fileName, { type: record.blob.type || 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+            await navigator.share({ files: [file] });
+            return;
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+        }
+    }
+
     triggerBlobDownload(record.blob, meta.fileName);
     showLocalToast('ダウンロードしました');
-}
-
-async function downloadAllPhotos() {
-    if (thumbList.length === 0) return;
-    showLocalToast('準備しています…');
-    let records;
-    try {
-        records = await dbGetAllPhotosFull();
-    } catch (err) {
-        console.error('写真の取得に失敗しました: ', err);
-        showLocalToast('ダウンロードに失敗しました');
-        return;
-    }
-    if (records.length === 0) return;
-
-    try {
-        const mod = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
-        const JSZip = mod.default;
-        const zip = new JSZip();
-        records.forEach((r) => zip.file(r.fileName, r.blob));
-        const zipBlob = await zip.generateAsync({ type: 'blob' });
-        triggerBlobDownload(zipBlob, `webar_photos_${Date.now()}.zip`);
-        showLocalToast('ダウンロードしました');
-    } catch (err) {
-        console.error('一括ダウンロード用のZip化に失敗したため、個別にダウンロードします: ', err);
-        records.forEach((r, i) => {
-            setTimeout(() => triggerBlobDownload(r.blob, r.fileName), i * 350);
-        });
-    }
 }
 
 // ---- サムネイル生成 ----
@@ -367,6 +392,7 @@ export async function capturePhotoForGallery(blob, fileName, createdAtMs) {
         updateGalleryButtonThumb();
         if (!galleryOverlay.hidden) {
             renderThumbStrip();
+            updateNavArrowState();
         }
     } catch (err) {
         console.error('写真のギャラリー保存に失敗しました: ', err);
@@ -386,9 +412,10 @@ export function initGalleryDeferred() {
 // ---- イベント登録(軽量なので即時に行い、ボタンは常に反応できるようにする) ----
 galleryBtn.addEventListener('click', openGalleryViewer);
 galleryCloseBtn.addEventListener('click', closeGalleryViewer);
-galleryDownloadOneBtn.addEventListener('click', downloadCurrentPhoto);
-galleryDownloadAllBtn.addEventListener('click', downloadAllPhotos);
-galleryDeleteBtn.addEventListener('click', deleteCurrentPhoto);
+galleryDownloadBtn.addEventListener('click', downloadCurrentPhoto);
+galleryDeleteBtn.addEventListener('click', onDeleteBtnClick);
+galleryPrevArrowBtn.addEventListener('click', showPrevPhoto);
+galleryNextArrowBtn.addEventListener('click', showNextPhoto);
 
 // ---- 画像エリアのタップ(没入モード切替)・スワイプ(前後の写真へ) ----
 const SWIPE_DISTANCE_THRESHOLD = 40;

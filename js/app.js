@@ -92,7 +92,7 @@ function initThree() {
     }, false);
 
     const textureLoader = new THREE.TextureLoader();
-    const maskTexture = textureLoader.load('assets/base.png');
+    const maskTexture = textureLoader.load('assets/base_copy.png');
     maskTexture.colorSpace = THREE.SRGBColorSpace;
     maskTexture.generateMipmaps = false;
     maskTexture.minFilter = THREE.LinearFilter;

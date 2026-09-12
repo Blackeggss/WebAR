@@ -205,7 +205,7 @@ const ROTATION_CW_ANGLES = [270];
 const ROTATION_CCW_ANGLES = [90];
 
 const ROLL_SIGN = 1;
-const GAMMA_SIGN = 1;
+const GAMMA_SIGN = -1;
 // 上下さかさま時、顔検出用に映像を回転させる向き。実機で90度の左右が逆に感じる場合は-1にしてください。
 const DETECTION_ROTATION_SIGN = 1;
 

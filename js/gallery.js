@@ -214,6 +214,11 @@ function setTrackTransform(px) {
 let baseTranslate = 0; // 現在の写真が中央に来る位置(px、常に -stageWidth())
 let currentTranslate = 0;
 
+// 写真の切り替えアニメーション(コミット処理)が進行中かどうか。true の間は新しい操作を受け付けない。
+// 高速連続操作でコミット処理が重なると、ロール固定のスロット入れ替えロジックが状態を壊してカクつきや
+// 黒画面のちらつきの原因になっていたため、切り替え中は次の操作をブロックして確実に1件ずつ処理する
+let isNavigating = false;
+
 // ドラッグ中の連続更新はrequestAnimationFrameへ束ね、1フレームに複数回styleを書き換えないようにする
 let pendingTransformPx = null;
 let transformRafId = null;
@@ -323,6 +328,7 @@ async function openToIndex(index) {
 // 指を離した後、隣の写真へトラックごとスライドさせてから中央位置に確定させる。
 // 外れる側のスロットだけを画面外で新しい内容に差し替えるので、非同期取得中でも中央の表示は乱れない
 function commitAdjacentMove(targetIndex, dir) {
+    isNavigating = true;
     let settled = false;
     const finish = () => {
         if (settled) return;
@@ -350,6 +356,7 @@ function commitAdjacentMove(targetIndex, dir) {
         updateThumbStripSelection();
         updateNavArrowState();
         updateDateDisplays(thumbList[currentIndex].createdAt);
+        isNavigating = false;
     };
     galleryTrack.addEventListener('transitionend', finish, { once: true });
     setTimeout(finish, 420); // transitionendが発火しない環境向けの保険
@@ -357,6 +364,7 @@ function commitAdjacentMove(targetIndex, dir) {
 
 // 隣接していない写真(サムネイルクリックで離れた写真を選んだ場合)はクロスフェードで切り替える
 function crossfadeToIndex(targetIndex) {
+    isNavigating = true;
     galleryTrack.classList.remove('dragging');
     galleryTrack.style.opacity = '0';
     setTimeout(async () => {
@@ -368,11 +376,13 @@ function crossfadeToIndex(targetIndex) {
         updateThumbStripSelection();
         updateNavArrowState();
         updateDateDisplays(thumbList[currentIndex].createdAt);
+        isNavigating = false;
     }, 150);
 }
 
 // スワイプ・矢印ボタン・サムネイルクリックの共通の切り替え口。アニメーション付きで写真を切り替える
 function animateToIndex(targetIndex) {
+    if (isNavigating) return; // 前の切り替えアニメーションが終わるまで新しい操作は受け付けない
     if (targetIndex < 0 || targetIndex >= thumbList.length || targetIndex === currentIndex) return;
     if (Math.abs(targetIndex - currentIndex) === 1) {
         const dir = targetIndex > currentIndex ? -1 : 1; // 次の写真は左へ、前の写真は右へスライドさせる
@@ -607,6 +617,7 @@ function computeFlickVelocity() {
 
 galleryStage.addEventListener('pointerdown', (e) => {
     if (thumbList.length === 0) return;
+    if (isNavigating) return; // 前の切り替えアニメーションが終わるまで新しいドラッグは開始させない
     e.preventDefault(); // 画像上でのネイティブドラッグ開始・テキスト選択を防ぐ(自前のスワイプと競合するため)
     isDragging = true;
     dragAxis = null;

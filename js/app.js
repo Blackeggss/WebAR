@@ -726,22 +726,29 @@ function renderFrame(timestampMs) {
         let detectionSource = video;
         if (isUpsideDown) {
             const rotateRad = -upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
-            // MediaPipeは固定の垂直画角(63度)を前提に、フレームの高さ(height)を基準にして
-            // 奥行き・大きさを計算している(幅は横方向の画角にしか影響しない)。そのため
-            // 検出用canvasの高さは必ず元映像の高さ(rawVideoHeight)と一致させる必要がある。
-            // 90度回転すると内容の自然な高さはrawVideoWidthになってしまうので、
-            // 高さがrawVideoHeightに収まるよう内容全体を均等に縮小する(クロップはしない)。
-            // クロップすると顔がフレーム外に出やすくなり追従が不安定になるため。
-            currentDetectionContainScale = rawVideoHeight / rawVideoWidth;
-            const canvasWidth = Math.round(rawVideoHeight * currentDetectionContainScale);
-            if (rotatedVideoCanvas.width !== canvasWidth || rotatedVideoCanvas.height !== rawVideoHeight) {
-                rotatedVideoCanvas.width = canvasWidth;
+            // 実機ログで判明: MediaPipeの奥行き計算はcanvasの「高さ(px)」ではなく
+            // 「アスペクト比(width/height)」に依存している。前回はcanvasの高さだけを
+            // rawVideoHeightに合わせたが、幅は縮小後の内容にぴったり合わせていたため
+            // アスペクト比が(横向きの)元映像と全く違う値(縦向きに近い比率)になってしまい、
+            // 上下さかさま時のZが縦向き相当の値として返ってきていた。
+            // そこで検出用canvas自体を元映像と全く同じ幅・高さ(=同じアスペクト比)にし、
+            // 90度回転した内容はクロップせず、その中に収まるよう均等に縮小して描く
+            // (余白ができるが、MediaPipeへの入力なので見た目上は問題ない)。
+            if (rotatedVideoCanvas.width !== rawVideoWidth || rotatedVideoCanvas.height !== rawVideoHeight) {
+                rotatedVideoCanvas.width = rawVideoWidth;
                 rotatedVideoCanvas.height = rawVideoHeight;
             }
-            // 縮小した分だけ顔もcontainScale倍小さく映ってしまうので、その分は
-            // applyResults側でdetScaleを1/containScale倍して打ち消す。
+            const rotatedContentWidth = rawVideoHeight; // 90度回転後の内容の自然な幅(=元の高さ)
+            const rotatedContentHeight = rawVideoWidth; // 90度回転後の内容の自然な高さ(=元の幅)
+            currentDetectionContainScale = Math.min(
+                rawVideoWidth / rotatedContentWidth,
+                rawVideoHeight / rotatedContentHeight
+            );
+            // 縮小した分だけ顔もcontainScale倍小さく映ってしまうので、その分はapplyResults側で
+            // positionをcontainScale倍して実際の奥行きに戻す(scaleは常に1固定なので触らない)。
             rotatedVideoCtx.save();
-            rotatedVideoCtx.translate(canvasWidth / 2, rawVideoHeight / 2);
+            rotatedVideoCtx.clearRect(0, 0, rawVideoWidth, rawVideoHeight);
+            rotatedVideoCtx.translate(rawVideoWidth / 2, rawVideoHeight / 2);
             rotatedVideoCtx.rotate(rotateRad);
             rotatedVideoCtx.scale(currentDetectionContainScale, currentDetectionContainScale);
             rotatedVideoCtx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2);

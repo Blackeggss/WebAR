@@ -333,6 +333,31 @@ function applyRotationState() {
     updateOutputCanvasSize();
 }
 
+// video要素の実際の解像度が変わった際に、そこから派生する各種サイズを再同期する。
+// getUserMediaでの新規取得時(loadeddata)と、既存トラックのライブ解像度変更(resize)の
+// 両方から呼ばれる共通処理。
+function syncVideoDimensions() {
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+    if (!videoWidth || !videoHeight) return;
+    if (videoWidth === rawVideoWidth && videoHeight === rawVideoHeight) return;
+
+    rawVideoWidth = videoWidth;
+    rawVideoHeight = videoHeight;
+
+    updateOutputCanvasSize();
+
+    arCanvas.width = videoWidth;
+    arCanvas.height = videoHeight;
+    renderer.setSize(videoWidth, videoHeight, false);
+
+    camera.aspect = videoWidth / videoHeight;
+    camera.updateProjectionMatrix();
+}
+// srcObjectの差し替えだけでなく、既存トラックのapplyConstraintsによる解像度変更でも
+// video.videoWidth/Heightが変わったタイミングでこのイベントが発火する。
+video.addEventListener('resize', syncVideoDimensions);
+
 function startCamera() {
     const videoConstraints = getVideoConstraints();
     const previousStream = currentStream;
@@ -345,20 +370,7 @@ function startCamera() {
 
         return new Promise((resolve) => {
             video.addEventListener("loadeddata", () => {
-                const videoWidth = video.videoWidth;
-                const videoHeight = video.videoHeight;
-
-                rawVideoWidth = videoWidth;
-                rawVideoHeight = videoHeight;
-
-                updateOutputCanvasSize();
-
-                arCanvas.width = videoWidth;
-                arCanvas.height = videoHeight;
-                renderer.setSize(videoWidth, videoHeight, false);
-
-                camera.aspect = videoWidth / videoHeight;
-                camera.updateProjectionMatrix();
+                syncVideoDimensions();
                 startFrameLoop();
                 showArLoading();
                 resolve();
@@ -374,6 +386,25 @@ function startCamera() {
         console.error("カメラの起動に失敗しました: ", err);
         throw err;
     });
+}
+
+// 画面回転時、カメラを完全に再取得(getUserMediaのやり直し)せず、既存トラックの解像度だけを
+// その場で変更する。applyConstraintsは通信を一切伴わない端末ローカルな処理(カメラハードウェアの
+// 再設定のみ)なので、フルの再起動より速く、回線速度による遅延も発生しない。
+// (通信が発生するのはモデル/ライブラリの初回読み込みだけで、カメラ解像度の変更とは無関係)
+// 一部端末はライブでの解像度変更に対応していないため、その場合のみ通常の再起動にフォールバックする。
+function resyncCameraForOrientation() {
+    const track = currentStream && currentStream.getVideoTracks()[0];
+    if (!track) return;
+    track.applyConstraints(getVideoConstraints()).catch(() => {
+        startCamera().catch(() => {});
+    });
+}
+
+let orientationResyncDebounceTimer = null;
+function scheduleOrientationResync() {
+    clearTimeout(orientationResyncDebounceTimer);
+    orientationResyncDebounceTimer = setTimeout(resyncCameraForOrientation, 100);
 }
 
 let rotationDebounceTimer = null;
@@ -505,9 +536,9 @@ if (isMobile) {
         window.addEventListener('orientationchange', scheduleRotationUpdate);
     }
     landscapeMql.addEventListener('change', () => {
-        // targetRatio(4:3/3:4)はlandscapeMql.matchesに直接依存するため、
-        // rotationStateの変化を待たずここで即座にキャンバスサイズを再計算する。
-        updateOutputCanvasSize();
+        // 生映像の解像度を今の向きに合わせて再同期する(完了後、resizeイベント経由で
+        // syncVideoDimensions()がupdateOutputCanvasSize()まで呼ぶ)。
+        scheduleOrientationResync();
         scheduleRotationUpdate();
     });
 }

@@ -208,6 +208,22 @@ const HYSTERESIS = 5;
 // 同じ向きを維持したまま折り返しをまたげるようにする境界値。
 const ZONE_BOUNDARY_WRAP_HOLD = 135;
 
+// 端末が上下さかさま(±135度以降)になったかどうか。ボタン位置(rotationState)とは独立して扱う。
+// OSのCSS自動回転は上下さかさまを回転として扱わない端末が多く(特にiPhone)、ボタン側は
+// cw/ccwの状態を維持したままで問題ないが、カメラ映像自体は実際に上下さかさまに映ってしまうため、
+// renderComposite側だけ180度回転させて補正する。回転ロック中でも物理的な向きには変わりないため、
+// lockedMode/orientationCheckDoneの状態に関わらず常に判定する。
+const UPSIDE_DOWN_BOUNDARY = 135;
+let isUpsideDown = false;
+
+function updateUpsideDownState(angleDeg) {
+    if (isUpsideDown) {
+        isUpsideDown = Math.abs(angleDeg) >= UPSIDE_DOWN_BOUNDARY - HYSTERESIS;
+    } else {
+        isUpsideDown = Math.abs(angleDeg) >= UPSIDE_DOWN_BOUNDARY + HYSTERESIS;
+    }
+}
+
 let rollAvailable = false;
 let latestRollDeg = 0;
 let gammaAvailable = false;
@@ -436,6 +452,7 @@ function handleDeviceMotion(event) {
     // 第2引数(Y)の符号を反転: 実機では「縦持ち(0度)」と「上下逆さま(180度)」が
     // 逆に計算されていたため補正(左右cw/ccwの判定軸には影響しない)
     latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
+    updateUpsideDownState(latestRollDeg);
 
     if (!orientationCheckDone) {
         runOrientationCheck();
@@ -822,6 +839,12 @@ function renderComposite(w, h, timeSec) {
         sy = (rawVideoHeight - sHeight) / 2;
     }
 
+    // 端末が上下さかさま(±135度以降)のときは、ボタン位置(rotationState)は変えずに
+    // 映像とARマスクの合成結果だけを180度回転させて補正する。
+    if (isUpsideDown) {
+        ctx.translate(w, h);
+        ctx.rotate(Math.PI);
+    }
     if (currentFacingMode === 'user') {
         ctx.translate(w, 0);
         ctx.scale(-1, 1);

@@ -5,6 +5,10 @@ const video = document.getElementById('webcam');
 const outputCanvas = document.getElementById('output_canvas');
 const ctx = outputCanvas.getContext('2d', { alpha: false });
 const arCanvas = document.createElement('canvas');
+// 上下さかさま時に顔検出モデル(上向きの顔を想定)向けだけに180度回転した映像を渡すための作業用canvas。
+// 合成結果(renderComposite)には一切使わない。
+const rotatedVideoCanvas = document.createElement('canvas');
+const rotatedVideoCtx = rotatedVideoCanvas.getContext('2d', { alpha: false });
 const shutterBtn = document.getElementById('shutter_btn');
 const switchCameraBtn = document.getElementById('switch_camera_btn');
 const cameraPicker = document.getElementById('camera_picker');
@@ -58,6 +62,9 @@ let maskMeshes = [];
 
 const _matrix = new THREE.Matrix4();
 const _euler = new THREE.Euler();
+// 上下さかさま時、検出用に180度回転させた映像から得た結果を実際の(無回転の)映像の
+// 座標系に戻すための補正クォータニオン(Z軸=画面奥行き軸まわりに180度)。
+const ROLL_180_QUAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI);
 let lastTimestampSec = 0;
 
 const _detPos = Array.from({ length: MAX_FACES }, () => new THREE.Vector3());
@@ -366,6 +373,9 @@ function syncVideoDimensions() {
     arCanvas.width = videoWidth;
     arCanvas.height = videoHeight;
     renderer.setSize(videoWidth, videoHeight, false);
+
+    rotatedVideoCanvas.width = videoWidth;
+    rotatedVideoCanvas.height = videoHeight;
 
     camera.aspect = videoWidth / videoHeight;
     camera.updateProjectionMatrix();
@@ -693,7 +703,18 @@ function nextMonotonicTimestampMs() {
 
 function renderFrame(timestampMs) {
     if (faceLandmarker) {
-        const results = faceLandmarker.detectForVideo(video, timestampMs);
+        // 顔検出モデルは上向きの顔を前提としているため、上下さかさま時だけ検出用に
+        // 180度回転させた映像を渡す(表示側の映像・合成結果には影響しない)。
+        let detectionSource = video;
+        if (isUpsideDown) {
+            rotatedVideoCtx.save();
+            rotatedVideoCtx.translate(rotatedVideoCanvas.width, rotatedVideoCanvas.height);
+            rotatedVideoCtx.rotate(Math.PI);
+            rotatedVideoCtx.drawImage(video, 0, 0);
+            rotatedVideoCtx.restore();
+            detectionSource = rotatedVideoCanvas;
+        }
+        const results = faceLandmarker.detectForVideo(detectionSource, timestampMs);
         applyResults(results, timestampMs);
     }
     renderer.render(scene, camera);
@@ -739,6 +760,10 @@ function applyResults(results, timestampMs) {
     for (let i = 0; i < faceCount; i++) {
         _matrix.fromArray(matrices[i].data);
         _matrix.decompose(_detPos[i], _detQuat[i], _detScale[i]);
+        if (isUpsideDown) {
+            _detPos[i].applyQuaternion(ROLL_180_QUAT);
+            _detQuat[i].premultiply(ROLL_180_QUAT);
+        }
     }
 
     const assignedSlotOfDetection = new Array(faceCount).fill(-1);
@@ -839,12 +864,6 @@ function renderComposite(w, h, timeSec) {
         sy = (rawVideoHeight - sHeight) / 2;
     }
 
-    // 端末が上下さかさま(±135度以降)のときは、ボタン位置(rotationState)は変えずに
-    // 映像とARマスクの合成結果だけを180度回転させて補正する。
-    if (isUpsideDown) {
-        ctx.translate(w, h);
-        ctx.rotate(Math.PI);
-    }
     if (currentFacingMode === 'user') {
         ctx.translate(w, 0);
         ctx.scale(-1, 1);

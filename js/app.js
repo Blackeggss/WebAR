@@ -62,9 +62,10 @@ let maskMeshes = [];
 
 const _matrix = new THREE.Matrix4();
 const _euler = new THREE.Euler();
-// 上下さかさま時、検出用に180度回転させた映像から得た結果を実際の(無回転の)映像の
-// 座標系に戻すための補正クォータニオン(Z軸=画面奥行き軸まわりに180度)。
-const ROLL_180_QUAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI);
+// 上下さかさま時、検出用に90度回転させた映像から得た結果を実際の(無回転の)映像の
+// 座標系に戻すための補正用スクラッチ(Z軸=画面奥行き軸まわりに、検出時とは逆向きに回転させる)。
+const _upsideDownAxis = new THREE.Vector3(0, 0, 1);
+const _upsideDownCorrectionQuat = new THREE.Quaternion();
 let lastTimestampSec = 0;
 
 const _detPos = Array.from({ length: MAX_FACES }, () => new THREE.Vector3());
@@ -205,6 +206,8 @@ const ROTATION_CCW_ANGLES = [90];
 
 const ROLL_SIGN = 1;
 const GAMMA_SIGN = 1;
+// 上下さかさま時、顔検出用に映像を回転させる向き。実機で90度の左右が逆に感じる場合は-1にしてください。
+const DETECTION_ROTATION_SIGN = 1;
 
 // 縦持ちを0度、時計回りを正として3分割 (-45〜45:縦, 45〜180:cw, -45〜-180:ccw)
 // HYSTERESISは境界付近でのちらつき防止用の最小限の遊び
@@ -215,20 +218,28 @@ const HYSTERESIS = 5;
 // 同じ向きを維持したまま折り返しをまたげるようにする境界値。
 const ZONE_BOUNDARY_WRAP_HOLD = 135;
 
-// 端末が上下さかさま(±135度以降)になったかどうか。ボタン位置(rotationState)とは独立して扱う。
-// OSのCSS自動回転は上下さかさまを回転として扱わない端末が多く(特にiPhone)、ボタン側は
-// cw/ccwの状態を維持したままで問題ないが、カメラ映像自体は実際に上下さかさまに映ってしまうため、
-// renderComposite側だけ180度回転させて補正する。回転ロック中でも物理的な向きには変わりないため、
-// lockedMode/orientationCheckDoneの状態に関わらず常に判定する。
+// 端末が上下さかさま(±135度以降)になったかどうか、およびどちら回りで到達したか。
+// ボタン位置(rotationState)や回転ロックの状態とは独立して扱う(顔検出用の補正は物理的な
+// 向きだけで決まるべきで、lockedMode/orientationCheckDoneの状態に関わらず常に判定する)。
+// 135度と-180/180の境界をまたぐジャンプはclassifyAngleと同じ考え方で、到達した方向
+// (cw経由なら+90度側、ccw経由なら-90度側)を135度を割り込むまで維持する。
 const UPSIDE_DOWN_BOUNDARY = 135;
+let upsideDownDir = 0; // 0=通常 / 1=時計回り経由で到達 / -1=反時計回り経由で到達
 let isUpsideDown = false;
 
 function updateUpsideDownState(angleDeg) {
-    if (isUpsideDown) {
-        isUpsideDown = Math.abs(angleDeg) >= UPSIDE_DOWN_BOUNDARY - HYSTERESIS;
-    } else {
-        isUpsideDown = Math.abs(angleDeg) >= UPSIDE_DOWN_BOUNDARY + HYSTERESIS;
+    if (upsideDownDir === 1) {
+        const stillIn = angleDeg >= UPSIDE_DOWN_BOUNDARY - HYSTERESIS || angleDeg <= -UPSIDE_DOWN_BOUNDARY;
+        if (!stillIn) upsideDownDir = 0;
+    } else if (upsideDownDir === -1) {
+        const stillIn = angleDeg <= -(UPSIDE_DOWN_BOUNDARY - HYSTERESIS) || angleDeg >= UPSIDE_DOWN_BOUNDARY;
+        if (!stillIn) upsideDownDir = 0;
+    } else if (angleDeg >= UPSIDE_DOWN_BOUNDARY + HYSTERESIS) {
+        upsideDownDir = 1;
+    } else if (angleDeg <= -(UPSIDE_DOWN_BOUNDARY + HYSTERESIS)) {
+        upsideDownDir = -1;
     }
+    isUpsideDown = upsideDownDir !== 0;
 }
 
 let rollAvailable = false;
@@ -373,9 +384,6 @@ function syncVideoDimensions() {
     arCanvas.width = videoWidth;
     arCanvas.height = videoHeight;
     renderer.setSize(videoWidth, videoHeight, false);
-
-    rotatedVideoCanvas.width = videoWidth;
-    rotatedVideoCanvas.height = videoHeight;
 
     camera.aspect = videoWidth / videoHeight;
     camera.updateProjectionMatrix();
@@ -704,13 +712,19 @@ function nextMonotonicTimestampMs() {
 function renderFrame(timestampMs) {
     if (faceLandmarker) {
         // 顔検出モデルは上向きの顔を前提としているため、上下さかさま時だけ検出用に
-        // 180度回転させた映像を渡す(表示側の映像・合成結果には影響しない)。
+        // (到達した方向に応じて)90度回転させた映像を渡す(表示側の映像・合成結果には影響しない)。
+        // 時計回り経由(upsideDownDir=1)なら+90度、反時計回り経由(-1)なら-90度。
         let detectionSource = video;
         if (isUpsideDown) {
+            const rotateRad = upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
+            if (rotatedVideoCanvas.width !== rawVideoHeight || rotatedVideoCanvas.height !== rawVideoWidth) {
+                rotatedVideoCanvas.width = rawVideoHeight;
+                rotatedVideoCanvas.height = rawVideoWidth;
+            }
             rotatedVideoCtx.save();
-            rotatedVideoCtx.translate(rotatedVideoCanvas.width, rotatedVideoCanvas.height);
-            rotatedVideoCtx.rotate(Math.PI);
-            rotatedVideoCtx.drawImage(video, 0, 0);
+            rotatedVideoCtx.translate(rotatedVideoCanvas.width / 2, rotatedVideoCanvas.height / 2);
+            rotatedVideoCtx.rotate(rotateRad);
+            rotatedVideoCtx.drawImage(video, -rawVideoWidth / 2, -rawVideoHeight / 2);
             rotatedVideoCtx.restore();
             detectionSource = rotatedVideoCanvas;
         }
@@ -757,12 +771,19 @@ function applyResults(results, timestampMs) {
 
     const faceCount = matrices ? Math.min(matrices.length, maskMeshes.length) : 0;
 
+    if (isUpsideDown) {
+        // 検出時に画像を+rotateRad回転させているので、結果はその逆(-rotateRad)回転させて
+        // 実際の(無回転の)映像の座標系に戻す。
+        const rotateRad = upsideDownDir * DETECTION_ROTATION_SIGN * (Math.PI / 2);
+        _upsideDownCorrectionQuat.setFromAxisAngle(_upsideDownAxis, -rotateRad);
+    }
+
     for (let i = 0; i < faceCount; i++) {
         _matrix.fromArray(matrices[i].data);
         _matrix.decompose(_detPos[i], _detQuat[i], _detScale[i]);
         if (isUpsideDown) {
-            _detPos[i].applyQuaternion(ROLL_180_QUAT);
-            _detQuat[i].premultiply(ROLL_180_QUAT);
+            _detPos[i].applyQuaternion(_upsideDownCorrectionQuat);
+            _detQuat[i].premultiply(_upsideDownCorrectionQuat);
         }
     }
 

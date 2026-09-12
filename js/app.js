@@ -835,10 +835,15 @@ function applyResults(results, timestampMs) {
             // その結果、顔の見かけの画素サイズがcontainScale倍小さくなり、MediaPipeからは
             // 「本来より1/containScale倍遠い」position(特にZ)が返ってくる。
             // (実機ログで確認済み: scaleは向き・状態に関わらず常に1,1,1固定で、
-            //  大きさの情報はscaleではなくpositionのZ(奥行き)にしか乗っていない。
-            //  そのためscale側を補正するのは誤りで、positionだけをcontainScale倍して
-            //  実際の奥行きに戻す)
-            _detPos[i].multiplyScalar(currentDetectionContainScale);
+            //  大きさの情報はscaleではなくpositionのZ(奥行き)にしか乗っていない)
+            //
+            // ただしX・Yはフレーム内の正規化2D位置から直接決まる値で、アスペクト比に
+            // 起因するこの奥行き誤差とは別経路。X・Yまで一律にcontainScale倍すると、
+            // 本来正しいはずの値まで原点方向に縮めてしまい、実機で「中央寄りになる」
+            // 「顔の移動への追従が弱くなる」症状が出た(_upsideDownCorrectionQuatはZ軸回りの
+            // 回転なのでZ成分には影響しない=Z軸まわりの回転とZ方向の奥行き補正は独立)。
+            // そのためZ成分だけをcontainScale倍して実際の奥行きに戻し、X・Yには触れない。
+            _detPos[i].z *= currentDetectionContainScale;
         }
     }
 

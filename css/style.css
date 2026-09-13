@@ -294,17 +294,21 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   touch-action: none;
 }
 
-/* トラック自体は中身(全アイテム分)の大きさに伸びる必要があるため、frameと直交する側の
-   長さだけ固定し、伸びる方向には幅/高さを指定しない */
+/* トラック自体は中身(全アイテム分)の大きさに伸びる必要がある。frameと直交する側の長さは
+   固定するが、伸びる方向は明示的にwidth/height:max-contentにする(指定しないと、
+   frameElの56pxに収まるブロック要素として扱われてしまい、getBoundingClientRect()で
+   実際のアイテム全体の範囲を取得できず、隙間をつまんでもドラッグできない不具合の原因になっていた) */
 #ar_switcher[data-orientation="horizontal"] #ar_switcher_track {
   flex-direction: row;
   height: 56px;
+  width: max-content;
   gap: 10px;
 }
 
 #ar_switcher[data-orientation="vertical"] #ar_switcher_track {
   flex-direction: column;
   width: 56px;
+  height: max-content;
   gap: 10px;
 }
 

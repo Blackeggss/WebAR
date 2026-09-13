@@ -287,21 +287,25 @@ const SETTLE_TRANSITION = 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)';
 const TAP_MOVE_THRESHOLD = 8;
 const TAP_TIME_THRESHOLD_MS = 350;
 
-// frameEl単体ではなくdocument全体でpointerdownを受け取り、getVisualItemAtPointで
-// 「実際に表示されているどのARアイテムに触れたか」を判定する(理由は上記コメント参照)。
-// 該当するアイテムが見つからない(スイッチャーと無関係な場所への操作)場合は何もせず抜け、
-// 他のボタン等の操作を妨げないようにする。
+// frameEl単体ではなくdocument全体でpointerdownを受け取り、座標で判定する(理由は上記コメント参照)。
+// ドラッグ開始の可否は「trackEl全体(項目同士の隙間も含む)に触れたか」で判定し、隙間を
+// つまんでもドラッグが始まるようにする。個々のアイテム(getVisualItemAtPoint)は、タップ判定
+// (どの項目を選択/削除するか)のためだけに別途使う(隙間をタップした場合はnullのままでよい)。
+// 該当領域外(スイッチャーと無関係な場所への操作)の場合は何もせず抜け、他の操作を妨げない。
 function onSwitcherPointerDown(e) {
-    const item = getVisualItemAtPoint(e.clientX, e.clientY);
-    if (!item) return;
+    const trackRect = trackEl.getBoundingClientRect();
+    if (!isPointInRect(e.clientX, e.clientY, trackRect)) return;
 
     e.preventDefault(); // 画像上でのネイティブドラッグ開始・テキスト選択を防ぐ
     isDragging = true;
     dragPointerId = e.pointerId;
-    dragDownItem = item;
+    dragDownItem = getVisualItemAtPoint(e.clientX, e.clientY); // 隙間の場合はnull(タップ判定でのみ使用)
 
-    const trashBtn = item.querySelector('.ar_switcher_trash_btn');
-    dragDownIsTrash = !!(trashBtn && isPointInRect(e.clientX, e.clientY, trashBtn.getBoundingClientRect()));
+    dragDownIsTrash = false;
+    if (dragDownItem) {
+        const trashBtn = dragDownItem.querySelector('.ar_switcher_trash_btn');
+        dragDownIsTrash = !!(trashBtn && isPointInRect(e.clientX, e.clientY, trashBtn.getBoundingClientRect()));
+    }
 
     trackEl.style.transition = 'none'; // ドラッグ中は遅延なく指に追従
 
@@ -414,6 +418,7 @@ function finishDrag() {
 
     trackEl.style.transition = SETTLE_TRANSITION;
     setTransform(currentPos);
+    closePopoverIfNotOnAdd();
     notifySelection();
 }
 
@@ -424,7 +429,15 @@ function selectIndexWithAnimation(index) {
     currentPos = -currentIndex * STEP_SIZE;
     trackEl.style.transition = TAP_SELECT_TRANSITION;
     setTransform(currentPos);
+    closePopoverIfNotOnAdd();
     notifySelection();
+}
+
+// スライドして「+」以外が白枠に入ったら、開いたままの「画像をアップロード」ポップオーバーを閉じる
+function closePopoverIfNotOnAdd() {
+    if (uploadPopover.hidden) return;
+    const item = trackEl.children[currentIndex];
+    if (!item || item.dataset.kind !== 'add') closeUploadPopover();
 }
 
 // ---- アップロード ----

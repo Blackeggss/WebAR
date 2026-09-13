@@ -291,6 +291,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 #ar_switcher_track {
   display: flex;
   will-change: transform;
+  touch-action: none;
 }
 
 /* トラック自体は中身(全アイテム分)の大きさに伸びる必要があるため、frameと直交する側の
@@ -315,6 +316,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   border-radius: 8px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.12);
+  touch-action: none;
 }
 
 /* 回転補正(端末が裏返しの時、中身だけ90度回す)はこのラッパーにかける。
@@ -331,6 +333,10 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
 #ar_switcher[data-rotate="ccw"] .ar_switcher_item_inner {
   transform: rotate(-90deg);
+}
+
+#ar_switcher[data-rotate="flip"] .ar_switcher_item_inner {
+  transform: rotate(180deg);
 }
 
 .ar_switcher_item img {

@@ -234,7 +234,11 @@ export function setArSwitcherLayout({ orientation: newOrientation, side, rotateD
     orientation = newOrientation;
     switcherEl.setAttribute('data-orientation', newOrientation);
     switcherEl.setAttribute('data-side', side || '');
-    switcherEl.setAttribute('data-rotate', rotateDeg === 90 ? 'cw' : (rotateDeg === -90 ? 'ccw' : 'none'));
+    let rotateAttr = 'none';
+    if (rotateDeg === 90) rotateAttr = 'cw';
+    else if (rotateDeg === -90) rotateAttr = 'ccw';
+    else if (rotateDeg === 180 || rotateDeg === -180) rotateAttr = 'flip';
+    switcherEl.setAttribute('data-rotate', rotateAttr);
 
     // 軸(横/縦)が切り替わった際、現在位置をアニメーションなしで新しい軸に即反映する
     trackEl.style.transition = 'none';

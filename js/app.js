@@ -483,7 +483,12 @@ function handleDeviceMotion(event) {
         runOrientationCheck();
         return;
     }
-    if (lockedMode) return;
+    // ロック中もAR切り替えUIの回転(lockedEarlyZone/isUpsideDown反映)は更新し続ける必要があるため、
+    // ここでreturnせずrefreshArSwitcherLayout()まで進める(位置自体はロック中ずっと横並びのまま)
+    if (lockedMode) {
+        refreshArSwitcherLayout();
+        return;
+    }
     applyRotationState();
     refreshArSwitcherLayout();
 }
@@ -493,23 +498,38 @@ function handleDeviceOrientation(event) {
     if (rollAvailable || typeof event.gamma !== 'number') return;
     gammaAvailable = true;
     latestGamma = event.gamma;
-    if (!orientationCheckDone || lockedMode) return;
+    if (!orientationCheckDone) return;
+    if (lockedMode) {
+        refreshArSwitcherLayout();
+        return;
+    }
     applyRotationState();
     refreshArSwitcherLayout();
 }
 
 // ARマスク切り替えUIの配置(横並び/縦並び・左右・裏返し時の回転)を端末の回転状態から決定してarSwitcher.jsへ反映する。
-// - ロック中・スマホ縦(-45〜45度): シャッター上に横並び
-// - PC、またはスマホ横(-45〜-135度側): シャッター左に縦並び
-// - スマホ横(45〜135度側): シャッター右に縦並び
-// - 上下さかさま(135度超): 到達方向に応じて↑と同じ配置を使い、中身だけ90度回転させる
+// - ロック解除スマホ縦(-45〜45度)・ロック中(位置は常に): シャッター上に横並び
+// - PC、またはロック解除スマホ横(-45〜-135度側): シャッター左に縦並び
+// - ロック解除スマホ横(45〜135度側): シャッター右に縦並び
+// - ロック解除で上下さかさま(135度超): 到達方向に応じて↑と同じ配置を使い、中身だけ90度回転させる
+// - ロック中は位置(横並び)を変えず、傾き角度(-45〜-135/45〜135/135度超)に応じて中身だけ
+//   90度・90度・180度回転させる(画面自体は回転しないため、写真の向きだけ補正する)
 function refreshArSwitcherLayout() {
     if (!isMobile) {
         setArSwitcherLayout({ orientation: 'vertical', side: 'left', rotateDeg: 0 });
         return;
     }
     if (lockedMode) {
-        setArSwitcherLayout({ orientation: 'horizontal', side: null, rotateDeg: 0 });
+        // ロック中は横並びのまま(位置は変えない)、傾き角度に応じて中身の写真だけ回転させる
+        let lockedRotateDeg = 0;
+        if (isUpsideDown) {
+            lockedRotateDeg = 180;
+        } else if (lockedEarlyZone === 'ccw') {
+            lockedRotateDeg = 90;
+        } else if (lockedEarlyZone === 'cw') {
+            lockedRotateDeg = -90;
+        }
+        setArSwitcherLayout({ orientation: 'horizontal', side: null, rotateDeg: lockedRotateDeg });
         return;
     }
     if (isUpsideDown) {

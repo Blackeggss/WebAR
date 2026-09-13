@@ -122,8 +122,16 @@ const maskTextureLoader = new THREE.TextureLoader();
 let maskMaterial = null;
 
 // AR切り替えUIで選択された画像をマスクのテクスチャとして適用する(ビルトインのassetパス・アップロード画像のblob URLどちらも可)
+// 連続して素早くAR切り替えを行うと複数のload()が同時に走り得るため、後から要求した方が
+// 先に完了して反映された後に、遅れて完了した古い要求が上書きしてしまわないようにトークンで防ぐ
+let maskTextureRequestToken = 0;
 function applyMaskTexture(url) {
+    const myToken = ++maskTextureRequestToken;
     maskTextureLoader.load(url, (texture) => {
+        if (myToken !== maskTextureRequestToken) {
+            texture.dispose(); // 既に新しい選択に上書きされているので、この結果は捨てる
+            return;
+        }
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.generateMipmaps = false;
         texture.minFilter = THREE.LinearFilter;

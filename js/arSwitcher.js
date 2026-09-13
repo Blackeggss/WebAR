@@ -23,6 +23,20 @@ const uploadInput = document.getElementById('ar_upload_input');
 const outputCanvas = document.getElementById('output_canvas');
 const sharedToastEl = document.getElementById('toast');
 
+// スイッチャーより手前に重なって表示され得る他のUI。座標だけで判定するとこれらの背後にある
+// ARアイテムへタップが貫通してしまうため、pointerdown時にこれらの内部が押されていたら
+// スイッチャー側の操作は一切開始しない(このUI自身の操作を優先させる)
+const blockingOverlayEls = [
+    document.getElementById('ar_upload_popover'),
+    document.getElementById('gallery_overlay'),
+    document.getElementById('camera_picker'),
+    document.getElementById('motion_permission_overlay'),
+].filter(Boolean);
+
+function isPointerOnBlockingOverlay(target) {
+    return blockingOverlayEls.some((el) => el.contains(target));
+}
+
 let orientation = 'horizontal'; // 'horizontal' | 'vertical'
 let currentIndex = 1; // 初期選択 = base.png(「+」の次)
 let currentPos = -currentIndex * STEP_SIZE;
@@ -54,6 +68,19 @@ function getCoord(e) {
 
 function setTransform(pos) {
     trackEl.style.transform = orientation === 'horizontal' ? `translateX(${pos}px)` : `translateY(${pos}px)`;
+}
+
+// トラックが慣性/選択アニメーション(CSSトランジション)の途中の時に読み取ると、今実際に
+// 描画されている(中間の)位置を返す。style.transformが持つ「最終目標値」とは異なるため、
+// 新しいドラッグをアニメーション再生中に始めた際、この値を使わずにtransitionだけ切ると
+// 見た目が目標値へ一気にジャンプしてしまう(ジャンプ後にドラッグが始まる不具合)
+function getCurrentVisualPos() {
+    const matrix = getComputedStyle(trackEl).transform;
+    if (!matrix || matrix === 'none') return currentPos;
+    const match = matrix.match(/matrix\(([^)]+)\)/);
+    if (!match) return currentPos;
+    const parts = match[1].split(',').map((v) => parseFloat(v));
+    return orientation === 'horizontal' ? parts[4] : parts[5];
 }
 
 // ---- 座標ベースのヒットテスト ----
@@ -260,6 +287,9 @@ export function setArSwitcherLayout({ orientation: newOrientation, side, rotateD
     // 既に表示中の場合は何も変わらない(消えている時だけ意味のある操作になる)
     switcherEl.classList.remove('ar_switcher-hidden');
 
+    // 開いたままだと、切り替わり前の向きを基準にした位置のまま取り残されてしまうため閉じる
+    closeUploadPopover();
+
     orientation = newOrientation;
     switcherEl.setAttribute('data-orientation', newOrientation);
     switcherEl.setAttribute('data-side', side || '');
@@ -293,6 +323,10 @@ const TAP_TIME_THRESHOLD_MS = 350;
 // (どの項目を選択/削除するか)のためだけに別途使う(隙間をタップした場合はnullのままでよい)。
 // 該当領域外(スイッチャーと無関係な場所への操作)の場合は何もせず抜け、他の操作を妨げない。
 function onSwitcherPointerDown(e) {
+    // ポップオーバー・ギャラリー等、スイッチャーより手前に重なる別のUIの操作中は、
+    // 座標が偶然ARアイテムと重なっていてもスイッチャー側の操作を始めない(タップの貫通防止)
+    if (isPointerOnBlockingOverlay(e.target)) return;
+
     const trackRect = trackEl.getBoundingClientRect();
     if (!isPointInRect(e.clientX, e.clientY, trackRect)) return;
 
@@ -307,7 +341,11 @@ function onSwitcherPointerDown(e) {
         dragDownIsTrash = !!(trashBtn && isPointInRect(e.clientX, e.clientY, trashBtn.getBoundingClientRect()));
     }
 
+    // 前の慣性/選択アニメーションの再生中に新しいドラッグを始めた場合、見た目の位置(中間値)を
+    // そのまま引き継ぐ(そうしないとtransition解除の瞬間に最終目標値へジャンプして見えてしまう)
+    currentPos = getCurrentVisualPos();
     trackEl.style.transition = 'none'; // ドラッグ中は遅延なく指に追従
+    setTransform(currentPos);
 
     const coord = getCoord(e);
     dragStartCoord = coord;
@@ -443,6 +481,10 @@ function closePopoverIfNotOnAdd() {
 // ---- アップロード ----
 let popoverOutsideHandler = null;
 function openUploadPopover() {
+    // 既に開いている場合は何もしない(「+」を連打すると外側クリック監視が何重にも登録され、
+    // 最後に1つ閉じても残りが document に張り付いたままになる不具合があったため)
+    if (!uploadPopover.hidden) return;
+
     const rect = frameEl.getBoundingClientRect();
     const popoverWidth = 200 + 24; // 幅200px + padding分の概算
     uploadPopover.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - popoverWidth))}px`;
@@ -451,17 +493,22 @@ function openUploadPopover() {
 
     popoverOutsideHandler = (e) => {
         if (uploadPopover.contains(e.target) || frameEl.contains(e.target)) return;
-        closeUploadPopover();
+        closeUploadPopover(true);
     };
     document.addEventListener('click', popoverOutsideHandler, true);
 }
 
 let popoverJustClosedAt = 0;
-function closeUploadPopover() {
+// fromOutsideClick: 外側クリック検知(またはカメラ映像タップ)で閉じた場合だけtrueにする。
+// スライド操作で自動的に閉じた場合(closePopoverIfNotOnAdd)まで含めてしまうと、その直後の
+// 無関係なカメラ映像タップがCANVAS_TAP_IGNORE_WINDOW_MS内で誤って無視されてしまうため区別している
+function closeUploadPopover(fromOutsideClick) {
     if (uploadPopover.hidden) return;
     uploadPopover.hidden = true;
-    // このクリックがポップオーバーを閉じただけなのか、カメラ映像タップとして扱うべきかを見分けるための印
-    popoverJustClosedAt = performance.now();
+    if (fromOutsideClick) {
+        // このクリックがポップオーバーを閉じただけなのか、カメラ映像タップとして扱うべきかを見分けるための印
+        popoverJustClosedAt = performance.now();
+    }
     if (popoverOutsideHandler) {
         document.removeEventListener('click', popoverOutsideHandler, true);
         popoverOutsideHandler = null;

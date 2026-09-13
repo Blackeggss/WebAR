@@ -76,20 +76,6 @@ function getVisualItemAtPoint(clientX, clientY) {
     return null;
 }
 
-// ---- 触覚フィードバック: 白枠に新しい画像が入った瞬間に鳴らす ----
-// iOSはVibration API(navigator.vibrate)に対応していないため、ネイティブのswitchコントロールを
-// クリックしてシステムの振動を起こす(#hapticLabel)。それ以外(Android等)は素直にvibrate()を使う
-const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-function triggerHapticFeedback() {
-    if (IS_IOS) {
-        document.getElementById('hapticLabel')?.click();
-    } else if (navigator.vibrate) {
-        navigator.vibrate(15);
-    }
-}
-
 // ---- 共有トースト(#toast)の簡易表示。ギャラリー側と表示ロジックは独立させている ----
 let sharedToastTimer = null;
 function showLocalToast(message) {
@@ -373,7 +359,10 @@ function onSwitcherPointerUp(e) {
             return;
         }
         if (tappedItem.dataset.kind === 'add') {
-            setTransform(currentPos);
+            // 「+」がどこにあっても(枠に入っていなくても)白枠まで素早くスライドさせてから開く
+            const addIndex = Array.from(trackEl.children).indexOf(tappedItem);
+            if (addIndex !== -1) selectIndexWithAnimation(addIndex);
+            else setTransform(currentPos);
             openUploadPopover();
             return;
         }
@@ -420,32 +409,22 @@ function finishDrag() {
     }
 
     targetIndex = Math.max(0, Math.min(targetIndex, totalSlides() - 1));
-    const previousIndex = currentIndex;
     currentIndex = targetIndex;
     currentPos = -currentIndex * STEP_SIZE;
 
     trackEl.style.transition = SETTLE_TRANSITION;
     setTransform(currentPos);
-    if (currentIndex !== previousIndex) hapticIfLandedOnMask();
     notifySelection();
 }
 
 // 項目を直接タップした時、その項目まで素早くスライドさせて選択する(ドラッグ慣性の0.5sより短い、機敏な動き)
 const TAP_SELECT_TRANSITION = 'transform 0.28s cubic-bezier(0.25, 1, 0.5, 1)';
 function selectIndexWithAnimation(index) {
-    const previousIndex = currentIndex;
     currentIndex = Math.max(0, Math.min(index, totalSlides() - 1));
     currentPos = -currentIndex * STEP_SIZE;
     trackEl.style.transition = TAP_SELECT_TRANSITION;
     setTransform(currentPos);
-    if (currentIndex !== previousIndex) hapticIfLandedOnMask();
     notifySelection();
-}
-
-// 白枠に実際に写真(「+」以外)が入った時だけ振動させる
-function hapticIfLandedOnMask() {
-    const item = trackEl.children[currentIndex];
-    if (item && item.dataset.kind === 'mask') triggerHapticFeedback();
 }
 
 // ---- アップロード ----

@@ -222,6 +222,199 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   transform: rotate(90deg);
 }
 
+/* ==========================================================================
+   ARマスク切り替え(指ドラッグ+慣性でめくれるカバーフロー風ピッカー)
+   画像に重なる可能性があるため全体を半透明にしている。
+   data-orientation(horizontal/vertical)・data-side(left/right)・data-rotate(none/cw/ccw)
+   はJS側(app.js)が端末の向き・ロック状態に応じて付け替える。
+   ========================================================================== */
+#ar_switcher {
+  position: fixed;
+  z-index: 38;
+  opacity: 0.82;
+  transition: opacity 200ms ease, right 150ms ease, left 150ms ease, bottom 150ms ease, top 150ms ease;
+}
+
+#ar_switcher.ar_switcher-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 横並び(スマホ縦・ロック中): シャッターボタンの上 */
+#ar_switcher[data-orientation="horizontal"] {
+  left: 50%;
+  right: auto;
+  bottom: calc(max(28px, env(safe-area-inset-bottom, 28px)) + 72px + 14px);
+  top: auto;
+  transform: translateX(-50%);
+}
+
+/* 縦並び・左側(PC、またはスマホ横-45〜-135/その裏返し): シャッターボタンの左 */
+#ar_switcher[data-orientation="vertical"][data-side="left"] {
+  right: calc(max(28px, env(safe-area-inset-right, 28px)) + 72px + 14px);
+  left: auto;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* 縦並び・右側(スマホ横45〜135/その裏返し): シャッターボタンの右 */
+#ar_switcher[data-orientation="vertical"][data-side="right"] {
+  left: calc(max(28px, env(safe-area-inset-left, 28px)) + 72px + 14px);
+  right: auto;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+#ar_switcher_frame {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  overflow: visible;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 常に最前面に来る半透明の白枠(現在選択中の1枚を示す) */
+#ar_switcher_frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 10;
+}
+
+#ar_switcher_track {
+  display: flex;
+  will-change: transform;
+}
+
+/* トラック自体は中身(全アイテム分)の大きさに伸びる必要があるため、frameと直交する側の
+   長さだけ固定し、伸びる方向には幅/高さを指定しない */
+#ar_switcher[data-orientation="horizontal"] #ar_switcher_track {
+  flex-direction: row;
+  height: 56px;
+  gap: 10px;
+}
+
+#ar_switcher[data-orientation="vertical"] #ar_switcher_track {
+  flex-direction: column;
+  width: 56px;
+  gap: 10px;
+}
+
+.ar_switcher_item {
+  position: relative;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 回転補正(端末が裏返しの時、中身だけ90度回す)はこのラッパーにかける。
+   .ar_switcher_item自体を回すとトラックのflexレイアウトが崩れるため分離している */
+.ar_switcher_item_inner {
+  width: 100%;
+  height: 100%;
+  transition: transform 300ms ease;
+}
+
+#ar_switcher[data-rotate="cw"] .ar_switcher_item_inner {
+  transform: rotate(90deg);
+}
+
+#ar_switcher[data-rotate="ccw"] .ar_switcher_item_inner {
+  transform: rotate(-90deg);
+}
+
+.ar_switcher_item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.92;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+#ar_switcher_add_btn {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 0;
+  touch-action: manipulation;
+}
+
+/* アップロード済みマスクの削除ボタン(右上に小さく重ねる) */
+.ar_switcher_trash_btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 11;
+  touch-action: manipulation;
+}
+
+/* ARマスクのアップロード用ポップオーバー(PCのカメラ選択リストと同系のデザイン) */
+#ar_upload_popover {
+  position: fixed;
+  z-index: 50;
+  background: rgba(20, 20, 20, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  padding: 12px;
+  width: 200px;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+#ar_upload_popover[hidden] {
+  display: none;
+}
+
+#ar_upload_btn {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 13px;
+  touch-action: manipulation;
+}
+
+#ar_upload_btn:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+#ar_upload_note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
 /* ローディング表示 */
 #ar_loading {
   position: fixed;

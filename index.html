@@ -43,6 +43,41 @@
         </button>
     </div>
 
+    <!-- ARマスク切り替え(指ドラッグ+慣性で横/縦にめくれるカバーフロー) -->
+    <div id="ar_switcher" data-orientation="horizontal" data-side="" data-rotate="none">
+        <div id="ar_switcher_frame">
+            <div id="ar_switcher_track">
+                <div class="ar_switcher_item" data-kind="add">
+                    <div class="ar_switcher_item_inner">
+                        <button id="ar_switcher_add_btn" aria-label="ARを追加">
+                            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                <path d="M12 5v14"/>
+                                <path d="M5 12h14"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="ar_switcher_item" data-kind="mask" data-mask-id="builtin:base">
+                    <div class="ar_switcher_item_inner">
+                        <img src="assets/base.png" alt="">
+                    </div>
+                </div>
+                <div class="ar_switcher_item" data-kind="mask" data-mask-id="builtin:base_copy">
+                    <div class="ar_switcher_item_inner">
+                        <img src="assets/base_copy.png" alt="">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ARマスクのアップロード用ポップオーバー -->
+    <div id="ar_upload_popover" hidden>
+        <button id="ar_upload_btn">画像をアップロード</button>
+        <p id="ar_upload_note">正方形・半透明の画像をご用意ください</p>
+        <input type="file" id="ar_upload_input" accept="image/*" hidden>
+    </div>
+
     <!-- PC専用カメラ選択 -->
     <div id="camera_picker" hidden>
         <div id="camera_picker_title">カメラを選択</div>

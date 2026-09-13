@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8";
 import { initGalleryDeferred, capturePhotoForGallery } from './gallery.js';
+import { initArSwitcherDeferred, setOnMaskChange, setArSwitcherLayout } from './arSwitcher.js';
 
 const video = document.getElementById('webcam');
 const outputCanvas = document.getElementById('output_canvas');
@@ -97,27 +98,44 @@ function initThree() {
         setTimeout(() => window.location.reload(), 800);
     }, false);
 
-    const textureLoader = new THREE.TextureLoader();
-    const maskTexture = textureLoader.load('assets/base_copy.png');
-    maskTexture.colorSpace = THREE.SRGBColorSpace;
-    maskTexture.generateMipmaps = false;
-    maskTexture.minFilter = THREE.LinearFilter;
-    maskTexture.magFilter = THREE.LinearFilter;
-
     const geometry = new THREE.PlaneGeometry(MASK_WIDTH, MASK_HEIGHT);
-    const material = new THREE.MeshBasicMaterial({
-        map: maskTexture,
+    maskMaterial = new THREE.MeshBasicMaterial({
+        map: null,
         transparent: true,
         side: THREE.DoubleSide,
         depthWrite: false
     });
 
     for (let i = 0; i < MAX_FACES; i++) {
-        const mesh = new THREE.Mesh(geometry, material);
+        const mesh = new THREE.Mesh(geometry, maskMaterial);
         mesh.visible = false;
         scene.add(mesh);
         maskMeshes.push(mesh);
     }
+
+    // ARマスク切り替えUI(arSwitcher.js)から選択が来るたびにテクスチャを差し替える。
+    // 初回登録時に現在の選択(初期状態はbase.png)がすぐ通知され、ここで最初のテクスチャが読み込まれる
+    setOnMaskChange(applyMaskTexture);
+}
+
+const maskTextureLoader = new THREE.TextureLoader();
+let maskMaterial = null;
+
+// AR切り替えUIで選択された画像をマスクのテクスチャとして適用する(ビルトインのassetパス・アップロード画像のblob URLどちらも可)
+function applyMaskTexture(url) {
+    maskTextureLoader.load(url, (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        const previousTexture = maskMaterial.map;
+        maskMaterial.map = texture;
+        maskMaterial.needsUpdate = true;
+        if (previousTexture) previousTexture.dispose();
+    }, undefined, (err) => {
+        console.error('ARマスクのテクスチャ読み込みに失敗しました: ', err);
+        showToast('ARの読み込みに失敗しました');
+    });
 }
 
 // MediaPipe Tasks API
@@ -324,6 +342,7 @@ function finishOrientationCheck(locked) {
         document.documentElement.setAttribute('data-rotation', 'none');
         updateOutputCanvasSize();
     }
+    refreshArSwitcherLayout();
 }
 
 // 50度を超えたらページ追従の有無を見て、追従していなければGRACE_MS待ってロック判定を確定する
@@ -466,6 +485,7 @@ function handleDeviceMotion(event) {
     }
     if (lockedMode) return;
     applyRotationState();
+    refreshArSwitcherLayout();
 }
 
 // devicemotion非対応端末向けフォールバック(gamma単体では折り返し判定不可のためロック判定はタイムアウト任せ)
@@ -475,6 +495,40 @@ function handleDeviceOrientation(event) {
     latestGamma = event.gamma;
     if (!orientationCheckDone || lockedMode) return;
     applyRotationState();
+    refreshArSwitcherLayout();
+}
+
+// ARマスク切り替えUIの配置(横並び/縦並び・左右・裏返し時の回転)を端末の回転状態から決定してarSwitcher.jsへ反映する。
+// - ロック中・スマホ縦(-45〜45度): シャッター上に横並び
+// - PC、またはスマホ横(-45〜-135度側): シャッター左に縦並び
+// - スマホ横(45〜135度側): シャッター右に縦並び
+// - 上下さかさま(135度超): 到達方向に応じて↑と同じ配置を使い、中身だけ90度回転させる
+function refreshArSwitcherLayout() {
+    if (!isMobile) {
+        setArSwitcherLayout({ orientation: 'vertical', side: 'left', rotateDeg: 0 });
+        return;
+    }
+    if (lockedMode) {
+        setArSwitcherLayout({ orientation: 'horizontal', side: null, rotateDeg: 0 });
+        return;
+    }
+    if (isUpsideDown) {
+        if (upsideDownDir === -1) {
+            setArSwitcherLayout({ orientation: 'vertical', side: 'left', rotateDeg: 90 });
+        } else {
+            setArSwitcherLayout({ orientation: 'vertical', side: 'right', rotateDeg: -90 });
+        }
+        return;
+    }
+    if (rotationState === 'ccw') {
+        setArSwitcherLayout({ orientation: 'vertical', side: 'left', rotateDeg: 0 });
+        return;
+    }
+    if (rotationState === 'cw') {
+        setArSwitcherLayout({ orientation: 'vertical', side: 'right', rotateDeg: 0 });
+        return;
+    }
+    setArSwitcherLayout({ orientation: 'horizontal', side: null, rotateDeg: 0 });
 }
 
 function startRotationSensors() {
@@ -987,3 +1041,8 @@ initializeFaceLandmarker();
 
 // ギャラリー(IndexedDB)の初期化はアイドル時に遅延実行し、起動速度に影響させない
 initGalleryDeferred();
+
+// ARマスク切り替えUIの初期配置(PC/ロック中/縦持ちのいずれかで確定させる)と、
+// アップロード済みマスクの読み込み(アイドル時に遅延実行し、起動速度に影響させない)
+refreshArSwitcherLayout();
+initArSwitcherDeferred();

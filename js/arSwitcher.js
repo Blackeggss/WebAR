@@ -29,7 +29,8 @@ let currentPos = -currentIndex * STEP_SIZE;
 
 let isDragging = false;
 let dragPointerId = null;
-let dragDownTarget = null;
+let dragDownItem = null; // pointerdown時に実際に画面上で触れていた.ar_switcher_item(座標判定で決定)
+let dragDownIsTrash = false; // dragDownItem内のゴミ箱ボタンを触れていたか
 let dragStartCoord = 0;
 let dragStartPos = 0;
 let dragStartTime = 0;
@@ -53,6 +54,26 @@ function getCoord(e) {
 
 function setTransform(pos) {
     trackEl.style.transform = orientation === 'horizontal' ? `translateX(${pos}px)` : `translateY(${pos}px)`;
+}
+
+// ---- 座標ベースのヒットテスト ----
+// #ar_switcher_frame(56x56)はoverflow:visibleで、実際のARアイテムはその外側まではみ出して
+// 表示されている。iOS Safari/Chromeでは、この「小さい親要素からoverflow:visibleではみ出した
+// transformされた子要素」に対するpointerdownが、はみ出た部分では正しく発火しない(またはframeElまで
+// 届かない)ことがあるため、frameElのpointerdownイベントだけに頼らず、document全体でpointerdownを
+// 受け取ったうえで、実際に画面上のどこにARアイテムが描画されているか(getBoundingClientRect)を見て
+// 判定する。これによりDOMのイベント発火・バブリングの信頼性に依存せず、見えている位置=触れる位置にできる
+function isPointInRect(x, y, rect) {
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function getVisualItemAtPoint(clientX, clientY) {
+    const items = trackEl.children;
+    for (const item of items) {
+        const rect = item.getBoundingClientRect();
+        if (isPointInRect(clientX, clientY, rect)) return item;
+    }
+    return null;
 }
 
 // ---- 共有トースト(#toast)の簡易表示。ギャラリー側と表示ロジックは独立させている ----
@@ -266,11 +287,22 @@ const SETTLE_TRANSITION = 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)';
 const TAP_MOVE_THRESHOLD = 8;
 const TAP_TIME_THRESHOLD_MS = 350;
 
-frameEl.addEventListener('pointerdown', (e) => {
-    e.preventDefault(); // 画像上でのネイティブドラッグ開始・テキスト選択を防ぐ(放置すると次回以降のドラッグが反応しなくなる)
+// frameEl単体ではなくdocument全体でpointerdownを受け取り、getVisualItemAtPointで
+// 「実際に表示されているどのARアイテムに触れたか」を判定する(理由は上記コメント参照)。
+// 該当するアイテムが見つからない(スイッチャーと無関係な場所への操作)場合は何もせず抜け、
+// 他のボタン等の操作を妨げないようにする。
+function onSwitcherPointerDown(e) {
+    const item = getVisualItemAtPoint(e.clientX, e.clientY);
+    if (!item) return;
+
+    e.preventDefault(); // 画像上でのネイティブドラッグ開始・テキスト選択を防ぐ
     isDragging = true;
     dragPointerId = e.pointerId;
-    dragDownTarget = e.target;
+    dragDownItem = item;
+
+    const trashBtn = item.querySelector('.ar_switcher_trash_btn');
+    dragDownIsTrash = !!(trashBtn && isPointInRect(e.clientX, e.clientY, trashBtn.getBoundingClientRect()));
+
     trackEl.style.transition = 'none'; // ドラッグ中は遅延なく指に追従
 
     const coord = getCoord(e);
@@ -280,11 +312,11 @@ frameEl.addEventListener('pointerdown', (e) => {
     lastCoord = coord;
     lastTime = dragStartTime;
     velocity = 0;
-    try { frameEl.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-});
+}
 
-frameEl.addEventListener('pointermove', (e) => {
+function onSwitcherPointerMove(e) {
     if (!isDragging || e.pointerId !== dragPointerId) return;
+    e.preventDefault(); // ドラッグ中にページがスクロール/バウンスしないようにする
     const coord = getCoord(e);
     const delta = coord - dragStartCoord;
     currentPos = dragStartPos + delta;
@@ -306,48 +338,55 @@ frameEl.addEventListener('pointermove', (e) => {
         lastCoord = coord;
         lastTime = now;
     }
-});
+}
 
-frameEl.addEventListener('pointerup', (e) => {
+function onSwitcherPointerUp(e) {
     if (!isDragging || e.pointerId !== dragPointerId) return;
     isDragging = false;
 
     const dx = getCoord(e) - dragStartCoord;
     const dt = performance.now() - dragStartTime;
     const wasTap = Math.abs(dx) < TAP_MOVE_THRESHOLD && dt < TAP_TIME_THRESHOLD_MS;
+    const tappedItem = dragDownItem;
+    const tappedIsTrash = dragDownIsTrash;
+    dragDownItem = null;
+    dragDownIsTrash = false;
 
-    if (wasTap && dragDownTarget && dragDownTarget.closest('#ar_switcher_add_btn')) {
-        setTransform(currentPos);
-        openUploadPopover();
-        return;
-    }
-    if (wasTap && dragDownTarget && dragDownTarget.closest('.ar_switcher_trash_btn')) {
-        const item = dragDownTarget.closest('.ar_switcher_item');
-        setTransform(currentPos);
-        if (item) deleteUploadedItem(item);
-        return;
-    }
-    // 上記以外の項目(枠に入っていない="peeking"中のものも含む)をタップした場合は、
-    // その項目まで素早くスライドさせてそのままARとして選択する
-    if (wasTap && dragDownTarget) {
-        const tappedItem = dragDownTarget.closest('.ar_switcher_item');
-        if (tappedItem) {
-            const index = Array.from(trackEl.children).indexOf(tappedItem);
-            if (index !== -1) {
-                selectIndexWithAnimation(index);
-                return;
-            }
+    if (wasTap && tappedItem) {
+        if (tappedIsTrash) {
+            setTransform(currentPos);
+            deleteUploadedItem(tappedItem);
+            return;
+        }
+        if (tappedItem.dataset.kind === 'add') {
+            setTransform(currentPos);
+            openUploadPopover();
+            return;
+        }
+        // 上記以外の項目(枠に入っていない="peeking"中のものも含む)をタップした場合は、
+        // その項目まで素早くスライドさせてそのままARとして選択する
+        const index = Array.from(trackEl.children).indexOf(tappedItem);
+        if (index !== -1) {
+            selectIndexWithAnimation(index);
+            return;
         }
     }
 
     finishDrag();
-});
+}
 
-frameEl.addEventListener('pointercancel', () => {
-    if (!isDragging) return;
+function onSwitcherPointerCancel(e) {
+    if (!isDragging || e.pointerId !== dragPointerId) return;
     isDragging = false;
+    dragDownItem = null;
+    dragDownIsTrash = false;
     finishDrag();
-});
+}
+
+document.addEventListener('pointerdown', onSwitcherPointerDown, { passive: false });
+document.addEventListener('pointermove', onSwitcherPointerMove, { passive: false });
+document.addEventListener('pointerup', onSwitcherPointerUp);
+document.addEventListener('pointercancel', onSwitcherPointerCancel);
 
 function finishDrag() {
     let targetIndex = currentIndex;

@@ -47,25 +47,32 @@
     <div id="ar_switcher" data-orientation="horizontal" data-side="" data-rotate="none">
         <div id="ar_switcher_frame">
             <div id="ar_switcher_track">
+                <!-- 各項目はbutton要素にしている(iOS Safariでoverflow:visibleにより枠外へはみ出た
+                     div/imgへのタップ・ドラッグ開始が正しく認識されない問題への対策。実際にbutton要素の
+                     「+」だけは枠外でも操作できていたことから判明した) -->
                 <div class="ar_switcher_item" data-kind="add">
-                    <div class="ar_switcher_item_inner">
-                        <button id="ar_switcher_add_btn" aria-label="ARを追加">
+                    <button type="button" id="ar_switcher_add_btn" class="ar_switcher_item_btn" aria-label="ARを追加">
+                        <span class="ar_switcher_item_inner">
                             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                                 <path d="M12 5v14"/>
                                 <path d="M5 12h14"/>
                             </svg>
-                        </button>
-                    </div>
+                        </span>
+                    </button>
                 </div>
                 <div class="ar_switcher_item" data-kind="mask" data-mask-id="builtin:base">
-                    <div class="ar_switcher_item_inner">
-                        <img src="assets/base.png" alt="">
-                    </div>
+                    <button type="button" class="ar_switcher_item_btn" aria-label="このARを選択">
+                        <span class="ar_switcher_item_inner">
+                            <img src="assets/base.png" alt="">
+                        </span>
+                    </button>
                 </div>
                 <div class="ar_switcher_item" data-kind="mask" data-mask-id="builtin:base_copy">
-                    <div class="ar_switcher_item_inner">
-                        <img src="assets/base_copy.png" alt="">
-                    </div>
+                    <button type="button" class="ar_switcher_item_btn" aria-label="このARを選択">
+                        <span class="ar_switcher_item_inner">
+                            <img src="assets/base_copy.png" alt="">
+                        </span>
+                    </button>
                 </div>
             </div>
         </div>

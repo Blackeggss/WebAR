@@ -319,9 +319,27 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   touch-action: none;
 }
 
+/* 各項目はbutton要素(.ar_switcher_item_btn)にしている。iOS Safariでoverflow:visibleにより
+   枠外へはみ出たdiv/imgへのタップ・ドラッグ開始が認識されないことがあり、button要素の「+」だけは
+   枠外でも操作できていたことから判明した対策。ここは項目いっぱいに広げるだけの透明なボタン */
+.ar_switcher_item_btn {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 0;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* 回転補正(端末が裏返しの時、中身だけ90度回す)はこのラッパーにかける。
    .ar_switcher_item自体を回すとトラックのflexレイアウトが崩れるため分離している */
 .ar_switcher_item_inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   height: 100%;
   transition: transform 300ms ease;
@@ -347,19 +365,6 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   pointer-events: none;
   -webkit-user-drag: none;
   user-select: none;
-}
-
-#ar_switcher_add_btn {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.85);
-  padding: 0;
-  touch-action: manipulation;
 }
 
 /* アップロード済みマスクの削除ボタン(右上に小さく重ねる) */

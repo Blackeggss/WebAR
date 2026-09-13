@@ -176,14 +176,22 @@ function appendUploadedItem(record) {
     item.dataset.kind = 'mask';
     item.dataset.maskId = `upload:${record.id}`;
 
-    const inner = document.createElement('div');
+    // button要素にしているのは、iOS Safariでoverflow:visibleにより枠外へはみ出たdiv/imgへの
+    // タップ・ドラッグ開始が正しく認識されない問題への対策(「+」ボタンだけは枠外でも操作できていたため)
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ar_switcher_item_btn';
+    btn.setAttribute('aria-label', 'このARを選択');
+
+    const inner = document.createElement('span');
     inner.className = 'ar_switcher_item_inner';
 
     const img = document.createElement('img');
     img.alt = '';
     img.src = getOrCreateThumbUrl(record);
     inner.appendChild(img);
-    item.appendChild(inner);
+    btn.appendChild(inner);
+    item.appendChild(btn);
     item.appendChild(createTrashIcon());
 
     trackEl.appendChild(item);

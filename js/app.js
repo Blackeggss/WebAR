@@ -278,7 +278,8 @@ function updateLockedEarlyZone(angleDeg) {
     }
 }
 
-// 検出用回転角度を決定: ロックなしはブラウザが45〜135度分を肩代わりするため135度以降だけ90度補正、ロック中は自前で45度から90度・135度から180度を補正する
+// 検出用回転角度を決定: ロックなしはブラウザが60〜135度分を肩代わりするため135度以降(上下さかさま)だけ90度補正、
+// ロック中は画面が回転しないぶん自前で45度から90度・135度から180度を補正する(lockedモード以外では未使用)
 function getDetectionRotationRad() {
     if (lockedMode) {
         if (isUpsideDown) return Math.PI;
@@ -306,17 +307,17 @@ function getScreenAngle() {
 
 function classifyAngle(angleDeg, previous) {
     if (previous === 'cw') {
-        // 40〜180の通常域、または折り返し後の180(-180)〜-135は引き続きcwを維持
-        const inHoldZone = angleDeg >= ROTATE_EXIT_ANGLE || angleDeg <= -ZONE_BOUNDARY_WRAP_HOLD;
+        // 「横向きから40度になると縦に戻る」ため、40度ちょうどはもう縦(none)。40度超のみcwを維持
+        const inHoldZone = angleDeg > ROTATE_EXIT_ANGLE || angleDeg <= -ZONE_BOUNDARY_WRAP_HOLD;
         return inHoldZone ? 'cw' : 'none';
     }
     if (previous === 'ccw') {
-        // -40〜-180の通常域、または折り返し後の-180(180)〜135は引き続きccwを維持
-        const inHoldZone = angleDeg <= -ROTATE_EXIT_ANGLE || angleDeg >= ZONE_BOUNDARY_WRAP_HOLD;
+        const inHoldZone = angleDeg < -ROTATE_EXIT_ANGLE || angleDeg >= ZONE_BOUNDARY_WRAP_HOLD;
         return inHoldZone ? 'ccw' : 'none';
     }
-    if (angleDeg > ROTATE_ENTER_ANGLE) return 'cw';
-    if (angleDeg < -ROTATE_ENTER_ANGLE) return 'ccw';
+    // 「60度以上傾けると横向きになる」ため、60度ちょうども含めてcw/ccwへ切り替える
+    if (angleDeg >= ROTATE_ENTER_ANGLE) return 'cw';
+    if (angleDeg <= -ROTATE_ENTER_ANGLE) return 'ccw';
     return 'none';
 }
 
@@ -362,7 +363,7 @@ function finishOrientationCheck(locked) {
     refreshArSwitcherLayout();
 }
 
-// 50度を超えたらページ追従の有無を見て、追従していなければGRACE_MS待ってロック判定を確定する
+// ROTATE_ENTER_ANGLE(60度)を超えたらページ追従の有無を見て、追従していなければGRACE_MS待ってロック判定を確定する
 function runOrientationCheck() {
     if (orientationCheckDone || !rollAvailable) return;
     if (Math.abs(latestRollDeg) < ORIENTATION_LOCK_CHECK_ANGLE) return;
@@ -525,12 +526,13 @@ function handleDeviceOrientation(event) {
 }
 
 // ARマスク切り替えUIの配置(横並び/縦並び・左右・裏返し時の回転)を端末の回転状態から決定してarSwitcher.jsへ反映する。
-// - ロック解除スマホ縦(-45〜45度)・ロック中(位置は常に): シャッター上に横並び
-// - PC、またはロック解除スマホ横(-45〜-135度側): シャッター左に縦並び
-// - ロック解除スマホ横(45〜135度側): シャッター右に縦並び
+// - ロック解除スマホ縦(-60〜60度、rotationState==='none')・ロック中(位置は常に): シャッター上に横並び
+// - PC、またはロック解除スマホ横(-60〜-135度側、rotationState==='ccw'): シャッター左に縦並び
+// - ロック解除スマホ横(60〜135度側、rotationState==='cw'): シャッター右に縦並び
 // - ロック解除で上下さかさま(135度超): 到達方向に応じて↑と同じ配置を使い、中身だけ90度回転させる
-// - ロック中は位置(横並び)を変えず、傾き角度(-45〜-135/45〜135/135度超)に応じて中身だけ
-//   90度・90度・180度回転させる(画面自体は回転しないため、写真の向きだけ補正する)
+// - ロック中は位置(横並び)を変えず、傾き角度(-45〜-135/45〜135/135度超、lockedEarlyZone/isUpsideDown)に
+//   応じて中身だけ90度・90度・180度回転させる(画面自体は回転しないため、写真の向きだけ補正する。
+//   ロック中は画面のCSSレイアウトが追従しないので、ブラウザの60/40度ではなく45度を境界に使う)
 function refreshArSwitcherLayout() {
     if (!isMobile) {
         setArSwitcherLayout({ orientation: 'vertical', side: 'left', rotateDeg: 0 });

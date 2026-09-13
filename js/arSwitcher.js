@@ -227,6 +227,10 @@ export function setArSwitcherLayout({ orientation: newOrientation, side, rotateD
     if (key === lastAppliedLayoutKey) return;
     lastAppliedLayoutKey = key;
 
+    // 向き(-45~45/-45~-135/45~135/裏返し)が切り替わったら、タップで消していても再表示する。
+    // 既に表示中の場合は何も変わらない(消えている時だけ意味のある操作になる)
+    switcherEl.classList.remove('ar_switcher-hidden');
+
     orientation = newOrientation;
     switcherEl.setAttribute('data-orientation', newOrientation);
     switcherEl.setAttribute('data-side', side || '');
@@ -251,6 +255,7 @@ const TAP_MOVE_THRESHOLD = 8;
 const TAP_TIME_THRESHOLD_MS = 350;
 
 frameEl.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); // 画像上でのネイティブドラッグ開始・テキスト選択を防ぐ(放置すると次回以降のドラッグが反応しなくなる)
     isDragging = true;
     dragPointerId = e.pointerId;
     dragDownTarget = e.target;
@@ -310,6 +315,18 @@ frameEl.addEventListener('pointerup', (e) => {
         if (item) deleteUploadedItem(item);
         return;
     }
+    // 上記以外の項目(枠に入っていない="peeking"中のものも含む)をタップした場合は、
+    // その項目まで素早くスライドさせてそのままARとして選択する
+    if (wasTap && dragDownTarget) {
+        const tappedItem = dragDownTarget.closest('.ar_switcher_item');
+        if (tappedItem) {
+            const index = Array.from(trackEl.children).indexOf(tappedItem);
+            if (index !== -1) {
+                selectIndexWithAnimation(index);
+                return;
+            }
+        }
+    }
 
     finishDrag();
 });
@@ -346,6 +363,16 @@ function finishDrag() {
     notifySelection();
 }
 
+// 項目を直接タップした時、その項目まで素早くスライドさせて選択する(ドラッグ慣性の0.5sより短い、機敏な動き)
+const TAP_SELECT_TRANSITION = 'transform 0.28s cubic-bezier(0.25, 1, 0.5, 1)';
+function selectIndexWithAnimation(index) {
+    currentIndex = Math.max(0, Math.min(index, totalSlides() - 1));
+    currentPos = -currentIndex * STEP_SIZE;
+    trackEl.style.transition = TAP_SELECT_TRANSITION;
+    setTransform(currentPos);
+    notifySelection();
+}
+
 // ---- アップロード ----
 let popoverOutsideHandler = null;
 function openUploadPopover() {
@@ -362,8 +389,12 @@ function openUploadPopover() {
     document.addEventListener('click', popoverOutsideHandler, true);
 }
 
+let popoverJustClosedAt = 0;
 function closeUploadPopover() {
+    if (uploadPopover.hidden) return;
     uploadPopover.hidden = true;
+    // このクリックがポップオーバーを閉じただけなのか、カメラ映像タップとして扱うべきかを見分けるための印
+    popoverJustClosedAt = performance.now();
     if (popoverOutsideHandler) {
         document.removeEventListener('click', popoverOutsideHandler, true);
         popoverOutsideHandler = null;
@@ -458,6 +489,10 @@ async function deleteUploadedItem(itemEl) {
 }
 
 // ---- カメラ映像部分タップでの表示切り替え ----
+// アップロードのポップオーバーが開いている状態でのタップは、外側クリック検知(popoverOutsideHandler)が
+// 先に(キャプチャフェーズで)ポップオーバーだけを閉じるので、続くこのクリックでは切り替えを行わない
+const CANVAS_TAP_IGNORE_WINDOW_MS = 50;
 outputCanvas.addEventListener('click', () => {
+    if (performance.now() - popoverJustClosedAt < CANVAS_TAP_IGNORE_WINDOW_MS) return;
     switcherEl.classList.toggle('ar_switcher-hidden');
 });

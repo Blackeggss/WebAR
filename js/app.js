@@ -231,10 +231,17 @@ const GAMMA_SIGN = 1;
 const DETECTION_ROTATION_SIGN = 1;
 
 // 縦持ちを0度として3分割(-45〜45:縦,45〜180:cw,-45〜-180:ccw)。HYSTERESISは境界のちらつき防止
+// (ロック中専用。画面自体は回転しないため、ブラウザの縦横切替とは無関係に写真の回転補正だけを45度で行う)
 const ZONE_BOUNDARY_1 = 45;
 const HYSTERESIS = 5;
 // atan2は±180度境界で不連続にジャンプするため、折り返しをまたいでも135度まで同じ向きを維持する境界値
 const ZONE_BOUNDARY_WRAP_HOLD = 135;
+
+// ロック解除時の回転状態(rotationState)判定用。ブラウザ自身の縦横切替は+60度で横、-40度未満で縦に
+// 戻るという非対称なヒステリシスを持つため、ここも同じ閾値に合わせる(45±5度のズレた閾値を使うと、
+// ブラウザの縦横切替が完了していない40〜60度の範囲でCSS上の見た目とrotationStateが食い違う)
+const ROTATE_ENTER_ANGLE = 60; // 縦→横とみなす角度(ブラウザが横画面に切り替わる角度と一致させる)
+const ROTATE_EXIT_ANGLE = 40; // 横→縦とみなす角度(ブラウザが縦画面に切り替わる角度と一致させる)
 
 // 端末が上下さかさま(±135度以降)かとその到達方向。ボタン位置やロック状態とは独立に常に判定する
 const UPSIDE_DOWN_BOUNDARY = 135;
@@ -299,17 +306,17 @@ function getScreenAngle() {
 
 function classifyAngle(angleDeg, previous) {
     if (previous === 'cw') {
-        // 45〜180の通常域、または折り返し後の180(-180)〜-135は引き続きcwを維持
-        const inHoldZone = angleDeg >= ZONE_BOUNDARY_1 - HYSTERESIS || angleDeg <= -ZONE_BOUNDARY_WRAP_HOLD;
+        // 40〜180の通常域、または折り返し後の180(-180)〜-135は引き続きcwを維持
+        const inHoldZone = angleDeg >= ROTATE_EXIT_ANGLE || angleDeg <= -ZONE_BOUNDARY_WRAP_HOLD;
         return inHoldZone ? 'cw' : 'none';
     }
     if (previous === 'ccw') {
-        // -45〜-180の通常域、または折り返し後の-180(180)〜135は引き続きccwを維持
-        const inHoldZone = angleDeg <= -(ZONE_BOUNDARY_1 - HYSTERESIS) || angleDeg >= ZONE_BOUNDARY_WRAP_HOLD;
+        // -40〜-180の通常域、または折り返し後の-180(180)〜135は引き続きccwを維持
+        const inHoldZone = angleDeg <= -ROTATE_EXIT_ANGLE || angleDeg >= ZONE_BOUNDARY_WRAP_HOLD;
         return inHoldZone ? 'ccw' : 'none';
     }
-    if (angleDeg > ZONE_BOUNDARY_1 + HYSTERESIS) return 'cw';
-    if (angleDeg < -(ZONE_BOUNDARY_1 + HYSTERESIS)) return 'ccw';
+    if (angleDeg > ROTATE_ENTER_ANGLE) return 'cw';
+    if (angleDeg < -ROTATE_ENTER_ANGLE) return 'ccw';
     return 'none';
 }
 
@@ -334,8 +341,10 @@ function updateOutputCanvasSize() {
     outputCanvas.height = height;
 }
 
-// 画面ロック中はCSSレイアウトが回転に追従しないことを利用してロックの有無を判定(50度傾いた時点でCSSが追従したか見て、追従なしがGRACE_MS続けばロック確定)
-const ORIENTATION_LOCK_CHECK_ANGLE = 50; // この角度をはっきり超えたらページの追従状況を見始める
+// 画面ロック中はCSSレイアウトが回転に追従しないことを利用してロックの有無を判定
+// (ブラウザが縦→横に切り替わるROTATE_ENTER_ANGLE度に達した時点でCSSが追従したか見て、追従なしがGRACE_MS続けばロック確定。
+// これより手前の角度で判定を始めると、ブラウザ自身がまだ横画面に切り替えていないだけなのに「ロック中」と誤判定してしまう)
+const ORIENTATION_LOCK_CHECK_ANGLE = ROTATE_ENTER_ANGLE; // この角度をはっきり超えたらページの追従状況を見始める
 const ORIENTATION_LOCK_GRACE_MS = 500; // OS側のネイティブ回転リフローが追いつくのを待つ猶予
 let orientationCheckDone = false;
 let lockedMode = false;

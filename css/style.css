@@ -281,7 +281,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   content: '';
   position: absolute;
   inset: 0;
-  border: 3px solid rgba(255, 255, 255, 0.55);
+  border: 3px solid rgba(255, 255, 255, 0.75);
   border-radius: 10px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   pointer-events: none;
@@ -994,4 +994,18 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   #gallery_close_btn {
     z-index: 4;
   }
+}
+
+/* 画面には表示しないが、操作可能な要素として存在させておく必要がある場合の共通クラス
+   (iOSの触覚フィードバック用switchコントロールなど。display:noneにすると発火しないことがある) */
+.visually_hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

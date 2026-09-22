@@ -43,7 +43,6 @@ const POSES = [
 ];
 const AR_MASKS = ['ar_glasses.png', 'ar_cat_ears.png', 'ar_crown.png', 'ar_party_hat.png', 'ar_sparkle_eyes.png']
     .map((f) => `../assets/auto/${f}`);
-const FIRST_MASK = '../assets/auto/first.png'; // 開始ボタン画面(準備中)で表示するAR
 const PRAISE_TEXTS = ['最高！', 'バッチリ！', 'いいね！', 'ナイスショット！'];
 
 let shotCount = 4; // 縦4枚 / 横・PC3枚
@@ -82,7 +81,6 @@ function preloadSessionAssets() {
         }
         preloadImage(maskPool[i]);
     }
-    preloadImage(FIRST_MASK);
 }
 
 function showScreen(name) {
@@ -155,6 +153,10 @@ async function boot() {
     }
     arLoadingEl.classList.remove('ar_loading-show');
 
+    // 「タップして開始」を押す前から、1枚目で実際に使うARを装着しておく(専用のプレースホルダー
+    // 画像は使わない)。ここで早めに読み込み始めることで、開始画面が出る頃には表示が間に合いやすくなる
+    arEngine.setMaskUrl(maskPool[0]);
+
     // カメラ・AIモデルの読み込みが終わってから先読みを始める(帯域を取り合わないようにするため)
     preloadSessionAssets();
 
@@ -165,7 +167,6 @@ async function boot() {
         }
     }
 
-    arEngine.setMaskUrl(FIRST_MASK);
     showScreen('start');
     await waitForStartButton();
 

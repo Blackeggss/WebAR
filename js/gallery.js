@@ -638,8 +638,21 @@ function showFirstVisitTipIfNeeded() {
     }
     if (alreadyVisited) return;
 
+    galleryFirstVisitTip.style.setProperty('--tip-shift', '0px');
     galleryFirstVisitTip.hidden = false;
-    requestAnimationFrame(() => galleryFirstVisitTip.classList.add('show'));
+    requestAnimationFrame(() => {
+        galleryFirstVisitTip.classList.add('show');
+        // 中央寄せだけだと、ボタンが画面端に近い(スマホ縦画面など)場合にはみ出すことがあるため、
+        // 実際の表示位置を測って画面内に収まるよう必要な分だけ補正する
+        requestAnimationFrame(() => {
+            const rect = galleryFirstVisitTip.getBoundingClientRect();
+            const margin = 8;
+            let shift = 0;
+            if (rect.left < margin) shift = margin - rect.left;
+            else if (rect.right > window.innerWidth - margin) shift = (window.innerWidth - margin) - rect.right;
+            if (shift !== 0) galleryFirstVisitTip.style.setProperty('--tip-shift', `${shift}px`);
+        });
+    });
     clearTimeout(firstVisitTipTimer);
     firstVisitTipTimer = setTimeout(hideFirstVisitTip, 4000);
     try {

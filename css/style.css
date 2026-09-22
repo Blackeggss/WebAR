@@ -742,11 +742,14 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
 /* 初回だけ表示する案内吹き出し(企画書3.6節) */
 #gallery_first_visit_tip {
+  /* ボタンの位置(PC/横画面は右寄り、スマホ縦画面は左寄り)によらず画面外にはみ出さないよう、
+     右/左どちらかに固定するのではなくボタンの中央を基準にする */
   position: absolute;
   bottom: calc(100% + 10px);
-  right: 0;
+  left: 50%;
+  right: auto;
   width: max-content;
-  max-width: 170px;
+  max-width: min(170px, 62vw);
   padding: 8px 12px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.95);
@@ -756,7 +759,8 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   line-height: 1.4;
   text-align: left;
   opacity: 0;
-  transform: translateY(6px);
+  /* --tip-shift: js/gallery.jsが画面端に収まらない時だけ実測して補正する(通常は0px) */
+  transform: translateX(calc(-50% + var(--tip-shift, 0px))) translateY(6px);
   transition: opacity 200ms ease, transform 200ms ease;
   pointer-events: none;
   white-space: normal;
@@ -764,13 +768,14 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 }
 #gallery_first_visit_tip.show {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateX(calc(-50% + var(--tip-shift, 0px))) translateY(0);
 }
 #gallery_first_visit_tip::after {
   content: '';
   position: absolute;
   top: 100%;
-  right: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   border: 6px solid transparent;
   border-top-color: rgba(255, 255, 255, 0.95);
 }

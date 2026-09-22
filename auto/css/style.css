@@ -1,0 +1,305 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #000;
+  width: 100%;
+  height: 100%;
+  overscroll-behavior: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#webcam {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#output_canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background-color: #000;
+  display: block;
+  z-index: 1;
+}
+
+/* ---- ルート版から流用: ローディング / フラッシュ / トースト / モーション許可 ---- */
+#ar_loading {
+  position: fixed;
+  left: 50%;
+  top: max(24px, env(safe-area-inset-top, 24px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  z-index: 45;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+#ar_loading.ar_loading-show { opacity: 1; }
+.ar_loading_spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  animation: arLoadingSpin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes arLoadingSpin { to { transform: rotate(360deg); } }
+
+#flash_overlay {
+  position: fixed;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 200;
+}
+#flash_overlay.flash-active { animation: flashAnim 280ms ease-out; }
+@keyframes flashAnim { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 60px;
+  transform: translateX(-50%) translateY(8px);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 210;
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+#toast.toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+#motion_permission_overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 16px;
+  text-align: center;
+  padding: 0 32px;
+}
+#motion_permission_overlay[hidden] { display: none; }
+#motion_permission_text { white-space: pre-line; line-height: 1.6; }
+#tap_icon { position: relative; width: 60px; height: 82px; }
+#tap_icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.hand { transform-origin: 79px -3px; animation: tapPress 1.4s ease-in-out infinite; will-change: transform; }
+@keyframes tapPress {
+  0%, 100% { transform: translateX(20px) rotate(-30deg) translateY(0); }
+  20% { transform: translateX(20px) rotate(-30deg) translateY(13px); }
+  40% { transform: translateX(20px) rotate(-30deg) translateY(0); }
+}
+.finger_line { fill: none; stroke: #fff; stroke-width: 7; stroke-linecap: round; }
+.tap_dot {
+  position: absolute; left: 39.5%; top: 4%; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; animation: tapDotPress 1.4s ease-in-out infinite; will-change: transform;
+}
+.tap_ripple {
+  position: absolute; left: 39.5%; top: 4%; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid #fff; box-sizing: border-box; animation: tapRipple 1.4s ease-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes tapDotPress {
+  0%, 40% { transform: translate(-50%, -50%) scale(1); }
+  45% { transform: translate(-50%, -50%) scale(0.7); }
+  65%, 100% { transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes tapRipple {
+  0%, 40% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+  45% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+}
+
+/* ---- 画面共通 ---- */
+#screens { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  color: #fff;
+  text-align: center;
+  padding: 24px;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.35);
+}
+.screen[hidden] { display: none; }
+.screen-transparent { background: transparent; pointer-events: none; }
+
+.screen_label {
+  font-size: 26px;
+  font-weight: 700;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+.screen_label-top { position: absolute; top: max(48px, env(safe-area-inset-top, 48px)); }
+
+.screen_result {
+  font-size: 24px;
+  font-weight: 700;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  white-space: pre-line;
+}
+
+.primary_btn {
+  appearance: none;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 999px;
+  padding: 12px 40px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  touch-action: manipulation;
+  transition: background 150ms ease, transform 120ms ease;
+}
+.primary_btn:active { background: rgba(0, 0, 0, 0.55); transform: scale(0.96); }
+.primary_btn[hidden] { display: none; }
+
+/* ---- ポーズルーレット ---- */
+.roulette { width: 100%; max-width: 340px; }
+.roulette_frame {
+  height: 64px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+}
+.roulette_track {
+  display: flex;
+  flex-direction: column;
+  transition: transform 3s cubic-bezier(0.1, 0.7, 0.2, 1);
+}
+.roulette_item {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* ---- ポーズ決定後に表示する写真 ---- */
+#pose_photo {
+  max-width: 78%;
+  max-height: 55%;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+#pose_photo[hidden] { display: none; }
+
+/* ---- カウントダウン ---- */
+.countdown_number {
+  font-size: 160px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  animation: countdownPop 1s ease-out;
+}
+@keyframes countdownPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  30% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ---- 撮影プレビュー ---- */
+#preview_img {
+  max-width: 88%;
+  max-height: 70%;
+  border-radius: 18px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  object-fit: contain;
+}
+.praise_label {
+  font-size: 28px;
+  font-weight: 800;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+
+/* ---- グリッドレイアウト演出 ----
+   結合結果(縦4枚・横3枚どちらも)を9:16の一枚絵として見せる。セルは正方形の格子(角丸なし)で
+   隙間なく敷き詰め、各画像はcoverで満たす(auto/js/flow.jsのcombineImagesで保存する画像と同じ見た目) */
+.layout_grid {
+  display: grid;
+  gap: 0;
+  width: 90%;
+  max-width: 360px;
+  aspect-ratio: 9 / 16;
+  max-height: 68vh;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  transition: transform 1s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+/* 選手カードの「完成」演出で使っていた回転をグリッド全体の仕上げとして流用する(auto/js/flow.jsのspinElement) */
+.layout_grid.spin-once { transform: rotateY(360deg); }
+.layout_grid[data-cols="2"] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.layout_grid[data-cols="1"] {
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(3, 1fr);
+}
+.layout_grid_cell {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.layout_grid_cell.show { opacity: 1; transform: scale(1); }
+.layout_grid_cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.layout_grid_cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 60%);
+  opacity: 0;
+}
+.layout_grid_cell.show::after { animation: sparkleFlash 0.6s ease-out; }
+@keyframes sparkleFlash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+
+
+/* ---- サンクス ---- */
+.thanks_label {
+  font-size: 30px;
+  font-weight: 800;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}

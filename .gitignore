@@ -3,4 +3,7 @@ venv/
 assets/*
 !assets/base.png
 !assets/base_copy.png
-s.html
+!assets/auto/
+!assets/auto/*.png
+!assets/pose/
+!assets/pose/*.jpg

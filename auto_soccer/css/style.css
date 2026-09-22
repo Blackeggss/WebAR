@@ -1,0 +1,597 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #000;
+  width: 100%;
+  height: 100%;
+  overscroll-behavior: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#webcam {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#output_canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background-color: #000;
+  display: block;
+  z-index: 1;
+}
+
+/* ---- ルート版から流用: ローディング / フラッシュ / トースト / モーション許可 ---- */
+#ar_loading {
+  position: fixed;
+  left: 50%;
+  top: max(24px, env(safe-area-inset-top, 24px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  z-index: 45;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+#ar_loading.ar_loading-show { opacity: 1; }
+.ar_loading_spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  animation: arLoadingSpin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes arLoadingSpin { to { transform: rotate(360deg); } }
+
+#flash_overlay {
+  position: fixed;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 200;
+}
+#flash_overlay.flash-active { animation: flashAnim 280ms ease-out; }
+@keyframes flashAnim { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 60px;
+  transform: translateX(-50%) translateY(8px);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 210;
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+#toast.toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+#motion_permission_overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 16px;
+  text-align: center;
+  padding: 0 32px;
+}
+#motion_permission_overlay[hidden] { display: none; }
+#motion_permission_text { white-space: pre-line; line-height: 1.6; }
+#tap_icon { position: relative; width: 60px; height: 82px; }
+#tap_icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.hand { transform-origin: 79px -3px; animation: tapPress 1.4s ease-in-out infinite; will-change: transform; }
+@keyframes tapPress {
+  0%, 100% { transform: translateX(20px) rotate(-30deg) translateY(0); }
+  20% { transform: translateX(20px) rotate(-30deg) translateY(13px); }
+  40% { transform: translateX(20px) rotate(-30deg) translateY(0); }
+}
+.finger_line { fill: none; stroke: #fff; stroke-width: 7; stroke-linecap: round; }
+.tap_dot {
+  position: absolute; left: 39.5%; top: 4%; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; animation: tapDotPress 1.4s ease-in-out infinite; will-change: transform;
+}
+.tap_ripple {
+  position: absolute; left: 39.5%; top: 4%; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid #fff; box-sizing: border-box; animation: tapRipple 1.4s ease-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes tapDotPress {
+  0%, 40% { transform: translate(-50%, -50%) scale(1); }
+  45% { transform: translate(-50%, -50%) scale(0.7); }
+  65%, 100% { transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes tapRipple {
+  0%, 40% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+  45% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+}
+
+/* ---- 画面共通 ---- */
+#screens { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  color: #fff;
+  text-align: center;
+  padding: 24px;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.35);
+}
+.screen[hidden] { display: none; }
+.screen-transparent { background: transparent; pointer-events: none; }
+
+.screen_label {
+  font-size: 26px;
+  font-weight: 700;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+.screen_label-top { position: absolute; top: max(48px, env(safe-area-inset-top, 48px)); }
+
+.screen_result {
+  font-size: 24px;
+  font-weight: 700;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  white-space: pre-line;
+}
+
+.primary_btn {
+  appearance: none;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 999px;
+  padding: 12px 40px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  touch-action: manipulation;
+  transition: background 150ms ease, transform 120ms ease;
+}
+.primary_btn:active { background: rgba(0, 0, 0, 0.55); transform: scale(0.96); }
+.primary_btn[hidden] { display: none; }
+
+/* ---- ポーズルーレット ---- */
+.roulette { width: 100%; max-width: 340px; }
+.roulette_frame {
+  height: 64px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+}
+.roulette_track {
+  display: flex;
+  flex-direction: column;
+  transition: transform 3s cubic-bezier(0.1, 0.7, 0.2, 1);
+}
+.roulette_item {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* ---- ポーズ決定後に表示する写真 ---- */
+#pose_photo {
+  max-width: 78%;
+  max-height: 55%;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+#pose_photo[hidden] { display: none; }
+
+/* ---- カウントダウン ---- */
+.countdown_number {
+  font-size: 160px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  animation: countdownPop 1s ease-out;
+}
+@keyframes countdownPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  30% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ---- 撮影プレビュー ---- */
+#preview_img {
+  max-width: 88%;
+  max-height: 70%;
+  border-radius: 18px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  object-fit: contain;
+}
+.praise_label {
+  font-size: 28px;
+  font-weight: 800;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+
+/* ---- グリッドレイアウト演出 ----
+   結合結果(縦4枚・横3枚どちらも)を9:16の一枚絵として見せる。セルは正方形の格子(角丸なし)で
+   隙間なく敷き詰め、各画像はcoverで満たす(auto/js/flow.jsのcombineImagesで保存する画像と同じ見た目) */
+.layout_grid {
+  display: grid;
+  gap: 0;
+  width: 90%;
+  max-width: 360px;
+  aspect-ratio: 9 / 16;
+  max-height: 68vh;
+  overflow: hidden;
+}
+.layout_grid[data-cols="2"] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.layout_grid[data-cols="1"] {
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(3, 1fr);
+}
+.layout_grid_cell {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.layout_grid_cell.show { opacity: 1; transform: scale(1); }
+.layout_grid_cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.layout_grid_cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 60%);
+  opacity: 0;
+}
+.layout_grid_cell.show::after { animation: sparkleFlash 0.6s ease-out; }
+@keyframes sparkleFlash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+
+/* ---- 選手カード: 日本代表風スポーツカード×文化祭プロフィール ----
+   色トークン: Navy #0A1A33 / Gold #D4AF37 / Red #C8102E / White #FFFFFF
+   派手なグラデーション・ネオン・過剰な発光は使わず、フラットな濃紺+細いゴールドラインでまとめる。
+   カード専用のクラス名前空間として .card-generator / .card-preview / .player-card を使う */
+.card-generator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+}
+@media (pointer: fine), (orientation: landscape) {
+  /* PC・横画面: カードプレビュー(左)+入力フォーム(右)の2カラム */
+  .card-generator { flex-direction: row; gap: 36px; }
+}
+.card-preview {
+  perspective: 1200px;
+  width: min(80vw, 320px);
+}
+@media (pointer: fine), (orientation: landscape) {
+  .card-preview { width: min(34vw, 300px); }
+}
+.card-generator__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(88vw, 340px);
+}
+.card-generator__sidebar[hidden] { display: none; }
+.card-generator__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #eee;
+  text-align: left;
+}
+.card-generator__field label {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(212, 175, 55, 0.9);
+  font-size: 11px;
+}
+.card-generator__field input,
+.card-generator__field select {
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 14px;
+}
+
+/* 二重レイアウト対応(PC/横画面=カードの外にフォーム、スマホ縦=カード内に埋め込み)は
+   auto/js/flow.js が input 要素そのものを .card-generator__sidebar ⇔ カード内スロットへ
+   appendChildで移動して実現する。CSSは配置先の見た目だけを担当する */
+/* ---- 選手カード本体のデザイン(test/index.html・test/style.cssの参照デザインを移植)----
+   スマホでの入力欄埋め込み(auto/js/flow.jsのapplyCardFormLayout)は変更しておらず、
+   [data-role]属性さえ維持されていれば同じ仕組みでinput/selectをカード内へ差し込める。
+   サイズ指定は元デザインのvw基準からcqw基準(カード自身の幅=100cqw)に変換し、
+   カードの実際の表示幅(スマホ埋め込み/PCサイドバー横並びなど)に関わらず比率が崩れないようにしている */
+.player-card {
+  --navy: #07152f;
+  --navy-deep: #040c1c;
+  --white: #ffffff;
+  --gold: #d4af37;
+  --red: #c8102e;
+  --line: rgba(212, 175, 55, 0.58);
+  container-type: inline-size;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  padding: 4.2% 5%;
+  border: 2px solid #9f7c24;
+  border-radius: 14px;
+  background: var(--navy);
+  color: var(--white);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58), inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  transform-style: preserve-3d;
+  transition: transform 1s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.player-card.flipped { transform: rotateY(360deg); }
+
+/* 紙・カードの質感を出す控えめな斜め縞模様 */
+.card__texture {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  opacity: 0.42;
+  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.018) 0, rgba(255, 255, 255, 0.018) 1px, transparent 1px, transparent 7px);
+}
+
+/* 控えめな白/赤のブラシストローク(斜めのアクセント帯、日本代表を連想させる程度) */
+.player-card::before,
+.player-card::after {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  pointer-events: none;
+  transform: rotate(-27deg);
+  border-radius: 2px;
+}
+.player-card::before {
+  width: 72%;
+  height: 8%;
+  left: -24%;
+  bottom: 19%;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 8px 20px 0 rgba(255, 255, 255, 0.16), 0 42px 0 rgba(200, 16, 46, 0.88);
+}
+.player-card::after {
+  width: 58%;
+  height: 5%;
+  right: -20%;
+  bottom: 12%;
+  background: rgba(200, 16, 46, 0.78);
+  box-shadow: -12px -22px 0 rgba(255, 255, 255, 0.72), -18px 18px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ごく控えめな全体の光沢(常時アニメーションはさせない静止した1本のハイライト) */
+.card__shine {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  background: linear-gradient(112deg, transparent 0%, transparent 44%, rgba(255, 255, 255, 0.045) 48%, rgba(255, 255, 255, 0.09) 50%, rgba(255, 255, 255, 0.025) 53%, transparent 57%, transparent 100%);
+  mix-blend-mode: screen;
+}
+
+.card__top {
+  /* 固定%高さだと総合値の文字サイズ次第でポジションが写真とかぶっていたため、
+     内容に合わせた高さ(auto)にし、写真側にmargin-topで余白を持たせる */
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.rating {
+  display: flex;
+  flex-direction: column;
+  line-height: 0.82;
+}
+.rating strong {
+  font-family: Impact, "Arial Black", sans-serif;
+  font-size: 17cqw;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #f4f4f1;
+  text-shadow: 2px 3px 0 rgba(0, 0, 0, 0.18);
+}
+.rating span {
+  margin-top: 1.8cqw;
+  margin-left: 3px;
+  color: var(--white);
+  font-size: 5cqw;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+.japan-mark {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 4px;
+  padding-top: 2px;
+  color: var(--white);
+  text-align: right;
+}
+.japan-mark__circle {
+  width: 5cqw;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #d91631;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  flex-shrink: 0;
+}
+.japan-mark b {
+  display: block;
+  font-size: 4.6cqw;
+  letter-spacing: 0.23em;
+}
+.japan-mark small {
+  display: block;
+  margin-top: 3px;
+  color: #d7c47e;
+  font-size: 1.7cqw;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+}
+
+.card__photo-frame {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  margin-top: 3.5cqw;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  outline: 1px solid rgba(212, 175, 55, 0.65);
+  outline-offset: -6px;
+  background: #0e203e;
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.card__photo-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.card__info {
+  /* 上左NICKNAME/上右GRADE・下左ANIMAL/下右SKILLの2×2グリッド(全て同じサイズのセル) */
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  margin-top: 3%;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+.info-cell {
+  min-width: 0;
+  min-height: 0;
+  padding: 1.6cqw 2.4cqw;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(7, 21, 47, 0.96);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.info-label {
+  display: block;
+  margin-bottom: 0.6cqw;
+  color: #d8bd67;
+  font-size: 2.1cqw;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+}
+.info-cell strong {
+  display: block;
+  overflow: hidden;
+  color: #fff;
+  font-size: 4.4cqw;
+  line-height: 1.2;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* スマホ縦画面で埋め込まれるinput/selectを、strong要素の見た目に馴染ませる */
+.info-cell strong input,
+.info-cell strong select {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+.info-cell strong select option,
+.card-generator__field select option {
+  color: #111;
+}
+
+.card__footer {
+  position: absolute;
+  z-index: 2;
+  right: 5%;
+  bottom: 2.5%;
+  left: 5%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #d7bd68;
+  font-size: 1.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.19em;
+}
+.card__footer i {
+  flex: 1;
+  height: 1px;
+  background: rgba(212, 175, 55, 0.45);
+}
+
+/* ---- カード完成演出(紙吹雪) ---- */
+#confetti_canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ---- サンクス ---- */
+.thanks_label {
+  font-size: 30px;
+  font-weight: 800;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}

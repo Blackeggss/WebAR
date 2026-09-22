@@ -9,6 +9,13 @@ const PHOTOS_STORE = 'photos'; // { id(auto), createdAt, fileName, blob(フル�
 const THUMBS_STORE = 'thumbs'; // { id(photosと同じid), createdAt, fileName, thumbBlob(縮小版) }
 const THUMB_MAX_SIZE = 160;
 
+// /auto/ (企画書の自動撮影フロー)が保存するセッション記録用の別DB。1レコード=1回の撮影セッションで、
+// 個別写真(3〜4枚)・グリッド結合画像・選手カード画像をBase64(dataURL)のまま保持する。
+// このギャラリーでは1レコードを「個別写真×N＋グリッド画像＋カード画像」の複数スライドに展開して表示する。
+const SESSION_DB_NAME = 'WebARPhotoGalleryDB';
+const SESSION_DB_VERSION = 1;
+const SESSION_STORE_NAME = 'photos'; // { id(auto), createdAt, type, individualImages[], combinedImage, playerCardImage }
+
 const galleryBtn = document.getElementById('gallery_btn');
 const galleryBtnThumb = document.getElementById('gallery_btn_thumb');
 const galleryOverlay = document.getElementById('gallery_overlay');
@@ -23,6 +30,7 @@ const galleryThumbStrip = document.getElementById('gallery_thumb_strip');
 const galleryDownloadBtn = document.getElementById('gallery_download_btn');
 const galleryDeleteBtn = document.getElementById('gallery_delete_btn');
 const galleryCloseBtn = document.getElementById('gallery_close_btn');
+const galleryFirstVisitTip = document.getElementById('gallery_first_visit_tip');
 const galleryPrevArrowBtn = document.getElementById('gallery_prev_arrow_btn');
 const galleryNextArrowBtn = document.getElementById('gallery_next_arrow_btn');
 const sharedToastEl = document.getElementById('toast');
@@ -111,6 +119,68 @@ function dbGetPhotoFull(id) {
     }));
 }
 
+// ---- セッションDB(WebARPhotoGalleryDB/photos)。/auto/js/db.js が書き込む側で、ここでは読み取り・更新・削除のみ行う ----
+let sessionDbPromise = null;
+function getSessionDB() {
+    if (sessionDbPromise) return sessionDbPromise;
+    sessionDbPromise = new Promise((resolve, reject) => {
+        if (!('indexedDB' in window)) {
+            reject(new Error('IndexedDB is not supported'));
+            return;
+        }
+        const req = indexedDB.open(SESSION_DB_NAME, SESSION_DB_VERSION);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(SESSION_STORE_NAME)) {
+                db.createObjectStore(SESSION_STORE_NAME, { keyPath: 'id', autoIncrement: true });
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+    return sessionDbPromise;
+}
+
+function dbGetAllSessions() {
+    return getSessionDB().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(SESSION_STORE_NAME, 'readonly');
+        const req = tx.objectStore(SESSION_STORE_NAME).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    }));
+}
+
+function dbGetSessionRecord(id) {
+    return getSessionDB().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(SESSION_STORE_NAME, 'readonly');
+        const req = tx.objectStore(SESSION_STORE_NAME).get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    }));
+}
+
+function dbPutSessionRecord(record) {
+    return getSessionDB().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(SESSION_STORE_NAME, 'readwrite');
+        tx.objectStore(SESSION_STORE_NAME).put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    }));
+}
+
+function dbDeleteSessionRecord(id) {
+    return getSessionDB().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(SESSION_STORE_NAME, 'readwrite');
+        tx.objectStore(SESSION_STORE_NAME).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    }));
+}
+
+function dataUrlToBlob(dataUrl) {
+    return fetch(dataUrl).then((res) => res.blob());
+}
+
 // ---- 共有トースト(#toast)の簡易表示。カメラ側のトーストと表示ロジックは独立させている ----
 let sharedToastTimer = null;
 function showLocalToast(message) {
@@ -139,20 +209,108 @@ function updateDateDisplays(createdAtMs) {
 }
 
 function getOrCreateThumbUrl(meta) {
-    let url = thumbUrlCache.get(meta.id);
+    let url = thumbUrlCache.get(meta.uid);
     if (!url) {
         url = URL.createObjectURL(meta.thumbBlob);
-        thumbUrlCache.set(meta.id, url);
+        thumbUrlCache.set(meta.uid, url);
     }
     return url;
 }
 
-function revokeThumbUrl(id) {
-    const url = thumbUrlCache.get(id);
+function revokeThumbUrl(uid) {
+    const url = thumbUrlCache.get(uid);
     if (url) {
         URL.revokeObjectURL(url);
-        thumbUrlCache.delete(id);
+        thumbUrlCache.delete(uid);
     }
+}
+
+// ---- 単発写真(legacy)/セッション画像(session)どちらのmetaでも扱えるようにする共通ディスパッチ ----
+async function getFullBlobForMeta(meta) {
+    if (meta.kind === 'session') {
+        const record = await dbGetSessionRecord(meta.sessionId);
+        if (!record) return null;
+        const dataUrl = meta.subType === 'individual' ? (record.individualImages || [])[meta.subIndex]
+            : meta.subType === 'combined' ? record.combinedImage
+            : record.playerCardImage;
+        if (!dataUrl) return null;
+        return dataUrlToBlob(dataUrl);
+    }
+    const record = await dbGetPhotoFull(meta.legacyId);
+    return record ? record.blob : null;
+}
+
+// セッション内の1枚を削除する。残り0枚になったらレコードごと削除する
+async function deleteMetaEntry(meta) {
+    if (meta.kind !== 'session') {
+        await dbDeletePhoto(meta.legacyId);
+        return;
+    }
+    const record = await dbGetSessionRecord(meta.sessionId);
+    if (!record) return;
+    if (meta.subType === 'individual') {
+        record.individualImages = (record.individualImages || []);
+        record.individualImages.splice(meta.subIndex, 1);
+    } else if (meta.subType === 'combined') {
+        record.combinedImage = null;
+    } else if (meta.subType === 'card') {
+        record.playerCardImage = null;
+    }
+    const isEmpty = (!record.individualImages || record.individualImages.length === 0)
+        && !record.combinedImage && !record.playerCardImage;
+    if (isEmpty) {
+        await dbDeleteSessionRecord(meta.sessionId);
+    } else {
+        await dbPutSessionRecord(record);
+    }
+}
+
+function loadImageFromDataUrl(dataUrl) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
+}
+
+// セッションレコード群を、このギャラリーが扱える「1枚=1meta」の形に展開する
+// (個別写真×N＋グリッド画像＋選手カード画像を、それぞれ独立したスライドにする)
+async function buildSessionSubMetas(records) {
+    const metas = [];
+    for (const record of records) {
+        const individualCount = (record.individualImages || []).length;
+        const entries = [];
+        (record.individualImages || []).forEach((dataUrl, idx) => {
+            entries.push({ subType: 'individual', subIndex: idx, dataUrl, fileName: `session_${record.id}_shot${idx + 1}.png` });
+        });
+        if (record.combinedImage) {
+            entries.push({ subType: 'combined', subIndex: individualCount, dataUrl: record.combinedImage, fileName: `session_${record.id}_grid.png` });
+        }
+        if (record.playerCardImage) {
+            entries.push({ subType: 'card', subIndex: individualCount + 1, dataUrl: record.playerCardImage, fileName: `session_${record.id}_card.png` });
+        }
+        for (const entry of entries) {
+            try {
+                const img = await loadImageFromDataUrl(entry.dataUrl);
+                const thumbBlob = await makeThumbBlob(img);
+                metas.push({
+                    kind: 'session',
+                    uid: `session:${record.id}:${entry.subType}:${entry.subIndex}`,
+                    sessionId: record.id,
+                    subType: entry.subType,
+                    subIndex: entry.subIndex,
+                    createdAt: record.createdAt,
+                    fileName: entry.fileName,
+                    thumbBlob,
+                    sortKey: record.createdAt * 1000 + entry.subIndex,
+                });
+            } catch (err) {
+                console.error('セッション画像の読み込みに失敗しました: ', err);
+            }
+        }
+    }
+    return metas;
 }
 
 function updateGalleryButtonThumb() {
@@ -254,24 +412,24 @@ function setSlideImgSrc(imgEl, url) {
     else imgEl.removeAttribute('src');
 }
 
-async function ensureFullUrlCached(id) {
-    if (fullUrlCache.has(id)) return;
-    const record = await dbGetPhotoFull(id).catch(() => null);
-    if (!record || fullUrlCache.has(id)) return;
-    fullUrlCache.set(id, URL.createObjectURL(record.blob));
+async function ensureFullUrlCached(meta) {
+    if (fullUrlCache.has(meta.uid)) return;
+    const blob = await getFullBlobForMeta(meta).catch(() => null);
+    if (!blob || fullUrlCache.has(meta.uid)) return;
+    fullUrlCache.set(meta.uid, URL.createObjectURL(blob));
 }
 
 // 使われなくなったフル解像度キャッシュ(現在どのスロットからも参照されていないもの)を解放する
 function evictUnusedFullUrlCache() {
-    const wantIds = new Set();
+    const wantUids = new Set();
     gallerySlideStates.forEach((slot) => {
         const meta = thumbList[slot.index];
-        if (meta) wantIds.add(meta.id);
+        if (meta) wantUids.add(meta.uid);
     });
-    for (const id of Array.from(fullUrlCache.keys())) {
-        if (!wantIds.has(id)) {
-            URL.revokeObjectURL(fullUrlCache.get(id));
-            fullUrlCache.delete(id);
+    for (const uid of Array.from(fullUrlCache.keys())) {
+        if (!wantUids.has(uid)) {
+            URL.revokeObjectURL(fullUrlCache.get(uid));
+            fullUrlCache.delete(uid);
         }
     }
 }
@@ -286,9 +444,9 @@ async function setSlotContent(slot, index) {
         setSlideImgSrc(slot.img, null);
         return;
     }
-    await ensureFullUrlCached(meta.id);
+    await ensureFullUrlCached(meta);
     if (myToken !== slot.token) return;
-    setSlideImgSrc(slot.img, fullUrlCache.get(meta.id));
+    setSlideImgSrc(slot.img, fullUrlCache.get(meta.uid));
 }
 
 // DOM順をgallerySlideStates配列の並び順に揃える(ローテーションで崩れた順序を正規化する)
@@ -426,9 +584,26 @@ async function ensureThumbListLoaded() {
     if (thumbListLoadPromise) return thumbListLoadPromise;
     thumbListLoadPromise = (async () => {
         try {
-            const records = await dbGetAllThumbs();
-            records.sort((a, b) => a.createdAt - b.createdAt);
-            thumbList = records;
+            const legacyRecords = await dbGetAllThumbs();
+            const legacyMetas = legacyRecords.map((r) => ({
+                kind: 'legacy',
+                uid: `legacy:${r.id}`,
+                legacyId: r.id,
+                createdAt: r.createdAt,
+                fileName: r.fileName,
+                thumbBlob: r.thumbBlob,
+                sortKey: r.createdAt * 1000,
+            }));
+
+            let sessionMetas = [];
+            try {
+                const sessionRecords = await dbGetAllSessions();
+                sessionMetas = await buildSessionSubMetas(sessionRecords);
+            } catch (err) {
+                console.error('セッション写真の読み込みに失敗しました: ', err);
+            }
+
+            thumbList = [...legacyMetas, ...sessionMetas].sort((a, b) => a.sortKey - b.sortKey);
             updateGalleryButtonThumb();
         } catch (err) {
             console.error('ギャラリーの読み込みに失敗しました: ', err);
@@ -447,12 +622,43 @@ async function openGalleryViewer() {
     galleryOverlay.classList.remove('immersive');
     renderThumbStrip();
     await openToIndex(thumbList.length - 1);
+    showFirstVisitTipIfNeeded();
+}
+
+// 企画書3.6節: 初回だけダウンロードアイコンへの案内ポップアップを出す
+const GALLERY_VISITED_KEY = 'gallery_visited';
+let firstVisitTipTimer = null;
+function showFirstVisitTipIfNeeded() {
+    if (!galleryFirstVisitTip) return;
+    let alreadyVisited = true;
+    try {
+        alreadyVisited = !!localStorage.getItem(GALLERY_VISITED_KEY);
+    } catch (err) {
+        return; // localStorage不可(プライベートモード等)の場合は出さない
+    }
+    if (alreadyVisited) return;
+
+    galleryFirstVisitTip.hidden = false;
+    requestAnimationFrame(() => galleryFirstVisitTip.classList.add('show'));
+    clearTimeout(firstVisitTipTimer);
+    firstVisitTipTimer = setTimeout(hideFirstVisitTip, 4000);
+    try {
+        localStorage.setItem(GALLERY_VISITED_KEY, '1');
+    } catch (err) { /* ignore */ }
+}
+
+function hideFirstVisitTip() {
+    if (!galleryFirstVisitTip) return;
+    galleryFirstVisitTip.classList.remove('show');
+    clearTimeout(firstVisitTipTimer);
+    firstVisitTipTimer = setTimeout(() => { galleryFirstVisitTip.hidden = true; }, 250);
 }
 
 function closeGalleryViewer() {
     galleryOverlay.hidden = true;
     galleryOverlay.classList.remove('immersive');
     resetDeleteConfirm();
+    hideFirstVisitTip();
 }
 
 // ---- 削除確認 ----
@@ -477,14 +683,33 @@ async function deleteCurrentPhoto() {
     const meta = thumbList[currentIndex];
     if (!meta) return;
     try {
-        await dbDeletePhoto(meta.id);
+        await deleteMetaEntry(meta);
     } catch (err) {
         console.error('写真の削除に失敗しました: ', err);
         showLocalToast('削除に失敗しました');
         return;
     }
-    revokeThumbUrl(meta.id);
-    thumbList.splice(currentIndex, 1);
+    revokeThumbUrl(meta.uid);
+
+    if (meta.kind === 'session') {
+        // セッション内の1枚を消すと残りのsubIndexがズレるため、同じセッション分は作り直す
+        const sessionId = meta.sessionId;
+        for (let i = thumbList.length - 1; i >= 0; i--) {
+            if (thumbList[i].kind === 'session' && thumbList[i].sessionId === sessionId) {
+                revokeThumbUrl(thumbList[i].uid);
+                thumbList.splice(i, 1);
+            }
+        }
+        const record = await dbGetSessionRecord(sessionId).catch(() => null);
+        if (record) {
+            const freshMetas = await buildSessionSubMetas([record]);
+            thumbList.push(...freshMetas);
+            thumbList.sort((a, b) => a.sortKey - b.sortKey);
+        }
+    } else {
+        thumbList.splice(currentIndex, 1);
+    }
+
     updateGalleryButtonThumb();
     if (thumbList.length === 0) {
         closeGalleryViewer();
@@ -510,13 +735,13 @@ function triggerBlobDownload(blob, fileName) {
 async function downloadCurrentPhoto() {
     const meta = thumbList[currentIndex];
     if (!meta) return;
-    const record = await dbGetPhotoFull(meta.id).catch(() => null);
-    if (!record) {
+    const blob = await getFullBlobForMeta(meta).catch(() => null);
+    if (!blob) {
         showLocalToast('保存に失敗しました');
         return;
     }
 
-    const file = new File([record.blob], meta.fileName, { type: record.blob.type || 'image/png' });
+    const file = new File([blob], meta.fileName, { type: blob.type || 'image/png' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
             await navigator.share({ files: [file] });
@@ -526,7 +751,7 @@ async function downloadCurrentPhoto() {
         }
     }
 
-    triggerBlobDownload(record.blob, meta.fileName);
+    triggerBlobDownload(blob, meta.fileName);
     showLocalToast('ダウンロードしました');
 }
 
@@ -563,9 +788,17 @@ export async function capturePhotoForGallery(blob, fileName, createdAtMs) {
         const thumbBlob = await makeThumbBlob(source);
         if (source.close) source.close();
         const id = await dbAddPhoto(createdAtMs, fileName, blob, thumbBlob);
-        thumbList.push({ id, createdAt: createdAtMs, fileName, thumbBlob });
+        thumbList.push({
+            kind: 'legacy',
+            uid: `legacy:${id}`,
+            legacyId: id,
+            createdAt: createdAtMs,
+            fileName,
+            thumbBlob,
+            sortKey: createdAtMs * 1000,
+        });
         // 連続撮影時に非同期処理の完了順がずれても古い→新しいの並びを保つ
-        thumbList.sort((a, b) => a.createdAt - b.createdAt);
+        thumbList.sort((a, b) => a.sortKey - b.sortKey);
         updateGalleryButtonThumb();
         if (!galleryOverlay.hidden) {
             renderThumbStrip();
@@ -590,7 +823,7 @@ export function initGalleryDeferred() {
 // ---- イベント登録(軽量なので即時に行い、ボタンは常に反応できるようにする) ----
 galleryBtn.addEventListener('click', openGalleryViewer);
 galleryCloseBtn.addEventListener('click', closeGalleryViewer);
-galleryDownloadBtn.addEventListener('click', downloadCurrentPhoto);
+galleryDownloadBtn.addEventListener('click', () => { hideFirstVisitTip(); downloadCurrentPhoto(); });
 galleryDeleteBtn.addEventListener('click', onDeleteBtnClick);
 galleryPrevArrowBtn.addEventListener('click', showPrevPhoto);
 galleryNextArrowBtn.addEventListener('click', showNextPhoto);

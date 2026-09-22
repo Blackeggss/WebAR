@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <title>WebAR 自動撮影</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://storage.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="stylesheet" href="css/style.css">
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
+</head>
+<body>
+
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="output_canvas"></canvas>
+
+    <!-- ローディング表示(ルート版と同じ見た目) -->
+    <div id="ar_loading">
+        <span class="ar_loading_spinner"></span>
+        <span class="ar_loading_text">AR読み込み中…</span>
+    </div>
+
+    <!-- シャッター時フラッシュ -->
+    <div id="flash_overlay"></div>
+
+    <!-- トースト -->
+    <div id="toast"></div>
+
+    <!-- モーション許可オーバーレイ(ルート版と同一マークアップ) -->
+    <div id="motion_permission_overlay" hidden>
+        <div id="tap_icon" aria-hidden="true">
+            <svg viewBox="0 -65 200 275" xmlns="http://www.w3.org/2000/svg">
+                <g class="hand">
+                    <path
+                        d="
+                            M 72 167
+                            C 65 165, 61 160, 61 153
+                            L 61 145
+                            L 30 111
+                            C 24 104, 25 94, 32 89
+                            C 38 84, 47 85, 53 91
+                            L 65 103
+                            L 65 12
+                            C 65 3, 71 -3, 79 -3
+                            C 87 -3, 93 3, 93 12
+                            L 93 86
+                            L 93 73
+                            C 93 50, 99 44, 107 44
+                            C 115 44, 121 50, 121 73
+                            L 121 89
+                            L 121 84
+                            C 121 61, 127 55, 135 55
+                            C 143 55, 149 61, 149 84
+                            L 149 98
+                            L 149 94
+                            C 149 71, 155 65, 163 65
+                            C 171 65, 177 71, 177 94
+                            L 177 125
+                            C 177 136, 174 143, 169 151
+                            C 164 160, 155 166, 145 169
+                            C 124 175, 94 175, 72 167
+                            Z
+                        "
+                        fill="none"
+                        stroke="white"
+                        stroke-width="7"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                    <path class="finger_line" d="M 93 86 L 93 12" />
+                    <path class="finger_line" d="M 121 89 L 121 73" />
+                    <path class="finger_line" d="M 149 98 L 149 84" />
+                </g>
+            </svg>
+            <span class="tap_ripple"></span>
+            <span class="tap_dot"></span>
+        </div>
+        <span id="motion_permission_text">タップして開始</span>
+    </div>
+
+    <!-- ここから自動撮影フロー専用の画面群(1枚ずつ表示切替) -->
+    <div id="screens">
+
+        <!-- 0. 開始ボタン(カメラ・ARの準備が整ってから表示し、押されるまで撮影シーケンスを始めない) -->
+        <section class="screen" id="screen_start" hidden>
+            <div class="screen_label">準備ができたらタップして開始！</div>
+            <button type="button" class="primary_btn" id="start_btn">開始</button>
+        </section>
+
+        <!-- 1. ポーズルーレット -->
+        <section class="screen" id="screen_pose" hidden>
+            <div class="screen_label" id="pose_intro_label">最初のポーズ！</div>
+            <div class="roulette" id="pose_roulette_wrap">
+                <div class="roulette_frame">
+                    <div class="roulette_track" id="pose_roulette_track"></div>
+                </div>
+            </div>
+            <div class="screen_result" id="pose_result_label" hidden></div>
+            <img id="pose_photo" alt="" hidden>
+        </section>
+
+        <!-- 2. AR装着・準備 -->
+        <section class="screen screen-transparent" id="screen_ar_ready" hidden>
+            <div class="screen_label screen_label-top">準備してー！</div>
+        </section>
+
+        <!-- 3. カウントダウン(準備の文言をそのまま出し続ける) -->
+        <section class="screen screen-transparent" id="screen_countdown" hidden>
+            <div class="screen_label screen_label-top">準備してー！</div>
+            <div class="countdown_number" id="countdown_number">3</div>
+        </section>
+
+        <!-- 4. 撮影プレビュー -->
+        <section class="screen" id="screen_preview" hidden>
+            <img id="preview_img" alt="">
+            <div class="praise_label" id="praise_label"></div>
+        </section>
+
+        <!-- 5. グリッドレイアウト演出 -->
+        <section class="screen" id="screen_layout" hidden>
+            <div class="layout_grid" id="layout_grid"></div>
+            <button type="button" class="primary_btn" id="layout_next_btn" hidden>次へ</button>
+        </section>
+
+        <!-- 6. サンクス -->
+        <section class="screen" id="screen_thanks" hidden>
+            <div class="thanks_label">撮影ありがとうございました！</div>
+        </section>
+
+    </div>
+
+    <script type="module" src="js/flow.js"></script>
+</body>
+</html>

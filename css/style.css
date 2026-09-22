@@ -731,12 +731,48 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   padding: 0;
   flex-shrink: 0;
   touch-action: manipulation;
+  position: relative;
   transition: opacity 200ms ease, background 150ms ease, color 150ms ease, border-color 150ms ease, width 150ms ease, border-radius 150ms ease, padding 150ms ease;
 }
 
 #gallery_download_btn:active,
 #gallery_delete_btn:active {
   background: rgba(0, 0, 0, 0.75);
+}
+
+/* 初回だけ表示する案内吹き出し(企画書3.6節) */
+#gallery_first_visit_tip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  width: max-content;
+  max-width: 170px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 200ms ease, transform 200ms ease;
+  pointer-events: none;
+  white-space: normal;
+  z-index: 5;
+}
+#gallery_first_visit_tip.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+#gallery_first_visit_tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 14px;
+  border: 6px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.95);
 }
 
 /* 削除確認状態(赤文字の確認ボタンに変化。もう一度押すと実際に削除する) */
@@ -961,7 +997,7 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
   #gallery_download_btn,
   #gallery_delete_btn {
-    position: static;
+    position: relative;
   }
 
   /* 常時表示の日時バッジ(旧「すべて保存」ボタンの位置)。文字を読みやすくするため横長のピル型にしている */

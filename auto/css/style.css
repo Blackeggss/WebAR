@@ -259,10 +259,12 @@ html, body {
   /* widthとheightを両方固定すると、画面の縦が狭い時にaspect-ratio(9:16)を保てず
      つぶれてしまうため、片方(width)だけを「使える高さいっぱいから逆算した値」と
      「画面幅からの上限」の小さい方に決め、heightはautoにしてaspect-ratioに委ねる。
-     これによりギャラリー表示同様、縦の高さを最大限使いつつ比率が崩れなくなる */
+     これによりギャラリー表示同様、縦の高さを最大限使いつつ比率が崩れなくなる。
+     「次へ」ボタン分の高さ(gap+ボタン)もあらかじめ差し引いておき、ボタンが表示された
+     瞬間にレイアウトが詰まらないようにしている */
   display: grid;
   gap: 0;
-  width: min(90vw, 360px, calc(78vh * 9 / 16));
+  width: min(90vw, 360px, calc((78vh - 80px) * 9 / 16));
   height: auto;
   aspect-ratio: 9 / 16;
   overflow: hidden;

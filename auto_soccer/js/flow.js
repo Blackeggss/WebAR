@@ -54,6 +54,7 @@ const POSES = [
     '顔の横でハート 🫶',
     '虫歯ポーズ（頬に手をあてる） 😃',
     'とびきりの笑顔 😊',
+    '指ハート 🫰',
 ];
 const AR_MASKS = [
     'ar_fox.png', 'ar_soccer.png', 'ar_momonga.png', 'ar_myakumyaku_1.png', 'ar_myakumyaku_2.png',

@@ -1004,7 +1004,12 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
 
   #gallery_download_btn,
   #gallery_delete_btn {
+    /* PC/横画面用のright/bottomオフセットはposition:staticなら無効化されるが、初回案内の
+       吹き出し配置のためにposition:relativeへ変えたことでこの値が効いてしまい、ボタンが
+       本来のflexの位置からずれて「浮いた」ように見えていた。ここで明示的に無効化する */
     position: relative;
+    right: auto;
+    bottom: auto;
   }
 
   /* 常時表示の日時バッジ(旧「すべて保存」ボタンの位置)。文字を読みやすくするため横長のピル型にしている */

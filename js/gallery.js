@@ -31,6 +31,7 @@ const galleryDownloadBtn = document.getElementById('gallery_download_btn');
 const galleryDeleteBtn = document.getElementById('gallery_delete_btn');
 const galleryCloseBtn = document.getElementById('gallery_close_btn');
 const galleryFirstVisitTip = document.getElementById('gallery_first_visit_tip');
+const galleryBtnFirstVisitTip = document.getElementById('gallery_btn_first_visit_tip');
 const galleryPrevArrowBtn = document.getElementById('gallery_prev_arrow_btn');
 const galleryNextArrowBtn = document.getElementById('gallery_next_arrow_btn');
 const sharedToastEl = document.getElementById('toast');
@@ -605,6 +606,11 @@ async function ensureThumbListLoaded() {
 
             thumbList = [...legacyMetas, ...sessionMetas].sort((a, b) => a.sortKey - b.sortKey);
             updateGalleryButtonThumb();
+            // 直接この画面に来た時・auto/auto_soccerから撮影後に戻ってきた時のどちらでも、
+            // 撮った写真が既にある(=丸いサムネイルが表示されている)なら案内を出す
+            if (thumbList.length > 0) {
+                showTipBubble(galleryBtnFirstVisitTip, GALLERY_BTN_VISITED_KEY);
+            }
         } catch (err) {
             console.error('ギャラリーの読み込みに失敗しました: ', err);
         }
@@ -613,6 +619,7 @@ async function ensureThumbListLoaded() {
 }
 
 async function openGalleryViewer() {
+    hideTipBubble(galleryBtnFirstVisitTip); // ギャラリーボタンの案内は用が済んだので消す
     await ensureThumbListLoaded();
     if (thumbList.length === 0) {
         showLocalToast('まだ撮影した写真がありません');
@@ -622,56 +629,58 @@ async function openGalleryViewer() {
     galleryOverlay.classList.remove('immersive');
     renderThumbStrip();
     await openToIndex(thumbList.length - 1);
-    showFirstVisitTipIfNeeded();
+    showTipBubble(galleryFirstVisitTip, GALLERY_VISITED_KEY);
 }
 
-// 企画書3.6節: 初回だけダウンロードアイコンへの案内ポップアップを出す
+// 企画書3.6節: 初回だけ案内の吹き出しを出す(ダウンロードボタン用・ギャラリーボタン用で共通の仕組み)
 const GALLERY_VISITED_KEY = 'gallery_visited';
-let firstVisitTipTimer = null;
-function showFirstVisitTipIfNeeded() {
-    if (!galleryFirstVisitTip) return;
-    let alreadyVisited = true;
+const GALLERY_BTN_VISITED_KEY = 'gallery_btn_tip_shown';
+const tipHideTimers = new WeakMap();
+
+function showTipBubble(el, storageKey) {
+    if (!el) return;
+    let alreadyShown = true;
     try {
-        alreadyVisited = !!localStorage.getItem(GALLERY_VISITED_KEY);
+        alreadyShown = !!localStorage.getItem(storageKey);
     } catch (err) {
         return; // localStorage不可(プライベートモード等)の場合は出さない
     }
-    if (alreadyVisited) return;
+    if (alreadyShown) return;
 
-    galleryFirstVisitTip.style.setProperty('--tip-shift', '0px');
-    galleryFirstVisitTip.hidden = false;
+    el.style.setProperty('--tip-shift', '0px');
+    el.hidden = false;
     requestAnimationFrame(() => {
-        galleryFirstVisitTip.classList.add('show');
+        el.classList.add('show');
         // 中央寄せだけだと、ボタンが画面端に近い(スマホ縦画面など)場合にはみ出すことがあるため、
         // 実際の表示位置を測って画面内に収まるよう必要な分だけ補正する
         requestAnimationFrame(() => {
-            const rect = galleryFirstVisitTip.getBoundingClientRect();
+            const rect = el.getBoundingClientRect();
             const margin = 8;
             let shift = 0;
             if (rect.left < margin) shift = margin - rect.left;
             else if (rect.right > window.innerWidth - margin) shift = (window.innerWidth - margin) - rect.right;
-            if (shift !== 0) galleryFirstVisitTip.style.setProperty('--tip-shift', `${shift}px`);
+            if (shift !== 0) el.style.setProperty('--tip-shift', `${shift}px`);
         });
     });
-    clearTimeout(firstVisitTipTimer);
-    firstVisitTipTimer = setTimeout(hideFirstVisitTip, 4000);
+    clearTimeout(tipHideTimers.get(el));
+    tipHideTimers.set(el, setTimeout(() => hideTipBubble(el), 4000));
     try {
-        localStorage.setItem(GALLERY_VISITED_KEY, '1');
+        localStorage.setItem(storageKey, '1');
     } catch (err) { /* ignore */ }
 }
 
-function hideFirstVisitTip() {
-    if (!galleryFirstVisitTip) return;
-    galleryFirstVisitTip.classList.remove('show');
-    clearTimeout(firstVisitTipTimer);
-    firstVisitTipTimer = setTimeout(() => { galleryFirstVisitTip.hidden = true; }, 250);
+function hideTipBubble(el) {
+    if (!el || el.hidden) return;
+    el.classList.remove('show');
+    clearTimeout(tipHideTimers.get(el));
+    tipHideTimers.set(el, setTimeout(() => { el.hidden = true; }, 250));
 }
 
 function closeGalleryViewer() {
     galleryOverlay.hidden = true;
     galleryOverlay.classList.remove('immersive');
     resetDeleteConfirm();
-    hideFirstVisitTip();
+    hideTipBubble(galleryFirstVisitTip);
 }
 
 // ---- 削除確認 ----
@@ -813,6 +822,9 @@ export async function capturePhotoForGallery(blob, fileName, createdAtMs) {
         // 連続撮影時に非同期処理の完了順がずれても古い→新しいの並びを保つ
         thumbList.sort((a, b) => a.sortKey - b.sortKey);
         updateGalleryButtonThumb();
+        // 写真が0枚の状態でこのページに来て、その場で1枚目を撮った場合にもここで案内を出す
+        // (showTipBubbleは表示済みなら何もしないので、複数回呼んでも安全)
+        showTipBubble(galleryBtnFirstVisitTip, GALLERY_BTN_VISITED_KEY);
         if (!galleryOverlay.hidden) {
             renderThumbStrip();
             updateNavArrowState();
@@ -836,7 +848,7 @@ export function initGalleryDeferred() {
 // ---- イベント登録(軽量なので即時に行い、ボタンは常に反応できるようにする) ----
 galleryBtn.addEventListener('click', openGalleryViewer);
 galleryCloseBtn.addEventListener('click', closeGalleryViewer);
-galleryDownloadBtn.addEventListener('click', () => { hideFirstVisitTip(); downloadCurrentPhoto(); });
+galleryDownloadBtn.addEventListener('click', () => { hideTipBubble(galleryFirstVisitTip); downloadCurrentPhoto(); });
 galleryDeleteBtn.addEventListener('click', onDeleteBtnClick);
 galleryPrevArrowBtn.addEventListener('click', showPrevPhoto);
 galleryNextArrowBtn.addEventListener('click', showNextPhoto);

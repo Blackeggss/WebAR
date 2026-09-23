@@ -48,7 +48,7 @@ html, body {
 
 /* ギャラリーボタン(丸いサムネイル) */
 #gallery_btn {
-  position: static;
+  position: relative;
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -740,8 +740,8 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   background: rgba(0, 0, 0, 0.75);
 }
 
-/* 初回だけ表示する案内吹き出し(企画書3.6節) */
-#gallery_first_visit_tip {
+/* 初回だけ表示する案内吹き出し(企画書3.6節)。ダウンロードボタン用・ギャラリーボタン用で共通の見た目 */
+.tip_bubble {
   /* ボタンの位置(PC/横画面は右寄り、スマホ縦画面は左寄り)によらず画面外にはみ出さないよう、
      右/左どちらかに固定するのではなくボタンの中央を基準にする */
   position: absolute;
@@ -766,11 +766,11 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   white-space: normal;
   z-index: 5;
 }
-#gallery_first_visit_tip.show {
+.tip_bubble.show {
   opacity: 1;
   transform: translateX(calc(-50% + var(--tip-shift, 0px))) translateY(0);
 }
-#gallery_first_visit_tip::after {
+.tip_bubble::after {
   /* 吹き出し本体は画面内に収まるよう--tip-shift分ずれることがあるが、矢印はその分だけ逆に
      補正してボタンの真上を指したままにする */
   content: '';

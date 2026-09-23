@@ -771,11 +771,13 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   transform: translateX(calc(-50% + var(--tip-shift, 0px))) translateY(0);
 }
 #gallery_first_visit_tip::after {
+  /* 吹き出し本体は画面内に収まるよう--tip-shift分ずれることがあるが、矢印はその分だけ逆に
+     補正してボタンの真上を指したままにする */
   content: '';
   position: absolute;
   top: 100%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% - var(--tip-shift, 0px)));
   border: 6px solid transparent;
   border-top-color: rgba(255, 255, 255, 0.95);
 }

@@ -55,9 +55,11 @@ const POSES = [
     '虫歯ポーズ（頬に手をあてる） 😃',
     'とびきりの笑顔 😊',
 ];
-const AR_MASKS = ['ar_glasses.png', 'ar_cat_ears.png', 'ar_crown.png', 'ar_party_hat.png', 'ar_sparkle_eyes.png']
-    .map((f) => `../assets/auto/${f}`);
-const FINAL_MASK = '../assets/auto/soccer.png';
+const AR_MASKS = [
+    'ar_fox.png', 'ar_soccer.png', 'ar_momonga.png', 'ar_myakumyaku_1.png', 'ar_myakumyaku_2.png',
+    'ar_rabbit.png', 'ar_redpanda.png', 'ar_seiren.png', 'ar_squirrel.png', 'ar_usagi.png', 'ar_vermeer.png',
+].map((f) => `../assets/auto/${f}`);
+const FINAL_MASK = '../assets/auto/ar_soccer.png';
 const PRAISE_TEXTS = ['最高！', 'バッチリ！', 'いいね！', 'ナイスショット！'];
 
 let shotCount = 4; // 縦4枚 / 横・PC3枚
@@ -232,11 +234,15 @@ function spinPoseRoulette(chosenPose) {
     });
 }
 
-async function runPoseStep(isFirst, isFinal, pose) {
+async function runPoseStep(isFirst, isFinal, pose, maskUrl) {
     showScreen('pose');
     poseResultLabel.hidden = true;
     posePhoto.hidden = true;
     poseRouletteWrap.hidden = false;
+
+    // ポーズを決めている演出の間に、次に使うARへ先に切り替えておく
+    // (読み込みの猶予時間も長くなるため、撮影までに間に合いやすくなる)
+    arEngine.setMaskUrl(maskUrl);
 
     if (isFinal) {
         poseIntroLabel.hidden = true;
@@ -253,21 +259,24 @@ async function runPoseStep(isFirst, isFinal, pose) {
 }
 
 // ---- AR装着準備 ----
-async function runArReadyStep(maskUrl) {
-    arEngine.setMaskUrl(maskUrl);
+// ARの切り替え自体はポーズ決め演出中(runPoseStep)で済ませてあるので、ここでは準備画面を表示するだけ
+async function runArReadyStep() {
     showScreen('ar_ready');
     await sleep(1400);
 }
 
 // ---- カウントダウン+撮影 ----
-async function runCountdownAndCapture() {
+async function runCountdownAndCapture(isFinal) {
     showScreen('countdown');
-    for (const n of [3, 2, 1]) {
+    // 最後の1枚(ポーズ自由)だけは、ポーズを考える時間を確保するため5秒(5→1を1秒ずつ)かける
+    const numbers = isFinal ? [5, 4, 3, 2, 1] : [3, 2, 1];
+    const stepMs = isFinal ? 1000 : 700;
+    for (const n of numbers) {
         countdownNumberEl.textContent = String(n);
         countdownNumberEl.style.animation = 'none';
         void countdownNumberEl.offsetWidth;
         countdownNumberEl.style.animation = '';
-        await sleep(700);
+        await sleep(stepMs);
     }
     flashEffect();
     const result = await arEngine.capturePhoto();
@@ -293,9 +302,9 @@ async function runSequence() {
         const pose = isFinal ? null : posePool[i];
         const maskUrl = isFinal ? FINAL_MASK : maskPool[i];
 
-        await runPoseStep(isFirst, isFinal, pose);
-        await runArReadyStep(maskUrl);
-        const { dataUrl, faceRectsNormalized } = await runCountdownAndCapture();
+        await runPoseStep(isFirst, isFinal, pose, maskUrl);
+        await runArReadyStep();
+        const { dataUrl, faceRectsNormalized } = await runCountdownAndCapture(isFinal);
         capturedShots.push({ dataUrl, faceRectsNormalized });
         await runPreviewStep(dataUrl);
     }

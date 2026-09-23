@@ -71,11 +71,24 @@ const capturedShots = []; // { dataUrl, faceRectsNormalized }
 // 端末の向きだけで決まる縦/横は起動直後にわかるので、ポーズ・ARの抽選もここで済ませておく。
 // こうすることで「どの画像が必要か」が早期に確定し、カメラ/モデルの読み込みと並行して
 // 必要な分だけ先読み(preloadSessionAssets)できるようにする
+// 通常ショット用のARプールを作る: 最終カット専用のFINAL_MASKは重複して出さないよう除外し、
+// ar_myakumyaku_1/2は似た2種類なのでどちらか一方だけをこのセッションで使うようにする
+function buildMaskPool() {
+    let pool = AR_MASKS.filter((url) => url !== FINAL_MASK);
+    const myaku1 = pool.find((url) => url.endsWith('ar_myakumyaku_1.png'));
+    const myaku2 = pool.find((url) => url.endsWith('ar_myakumyaku_2.png'));
+    if (myaku1 && myaku2) {
+        const dropped = Math.random() < 0.5 ? myaku1 : myaku2;
+        pool = pool.filter((url) => url !== dropped);
+    }
+    return shuffleArray(pool);
+}
+
 function decideSessionPlan() {
     sessionType = window.innerHeight > window.innerWidth ? 'portrait' : 'landscape';
     shotCount = sessionType === 'portrait' ? 4 : 3;
     posePool = shuffleArray(POSES);
-    maskPool = shuffleArray(AR_MASKS);
+    maskPool = buildMaskPool();
 }
 
 function preloadImage(url) {

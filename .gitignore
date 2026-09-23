@@ -12,6 +12,8 @@ assets/*
 !assets/ar_squirrel.png
 !assets/ar_usagi.png
 !assets/ar_vermeer.png
+!assets/base.png
+!assets/base_copy.png
 !assets/auto/
 !assets/auto/*.png
 !assets/pose/

@@ -256,12 +256,15 @@ html, body {
    結合結果(縦4枚・横3枚どちらも)を9:16の一枚絵として見せる。セルは正方形の格子(角丸なし)で
    隙間なく敷き詰め、各画像はcoverで満たす(auto/js/flow.jsのcombineImagesで保存する画像と同じ見た目) */
 .layout_grid {
+  /* widthとheightを両方固定すると、画面の縦が狭い時にaspect-ratio(9:16)を保てず
+     つぶれてしまうため、片方(width)だけを「使える高さいっぱいから逆算した値」と
+     「画面幅からの上限」の小さい方に決め、heightはautoにしてaspect-ratioに委ねる。
+     これによりギャラリー表示同様、縦の高さを最大限使いつつ比率が崩れなくなる */
   display: grid;
   gap: 0;
-  width: 90%;
-  max-width: 360px;
+  width: min(90vw, 360px, calc(78vh * 9 / 16));
+  height: auto;
   aspect-ratio: 9 / 16;
-  max-height: 68vh;
   overflow: hidden;
   transform-style: preserve-3d;
   transition: transform 1s cubic-bezier(0.2, 0.9, 0.2, 1);

@@ -79,3 +79,9 @@ export async function ensureAuthorized() {
 
     return true;
 }
+
+// 認証が必要な別ページ(例: /auto/ → /)へ遷移する際に、現在のURLの?tokenを引き継いで移動する。
+export function redirectWithToken(path) {
+    const token = new URLSearchParams(window.location.search).get('token');
+    window.location.href = token ? `${path}?token=${encodeURIComponent(token)}` : path;
+}

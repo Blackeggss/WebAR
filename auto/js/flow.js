@@ -4,7 +4,7 @@
 
 import * as arEngine from './arEngine.js';
 import { saveSession } from './db.js';
-import { ensureAuthorized } from '../../js/auth-gate.js';
+import { ensureAuthorized, redirectWithToken } from '../../js/auth-gate.js';
 
 if (!(await ensureAuthorized())) {
     throw new Error('WebAR: 認証されていないため起動を中止しました');
@@ -438,7 +438,7 @@ async function runThanksStep() {
     }
 
     await sleep(1500);
-    window.location.href = '../';
+    redirectWithToken('../');
 }
 
 hideAllScreens();

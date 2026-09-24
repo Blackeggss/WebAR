@@ -50,6 +50,11 @@ const toastEl = document.getElementById('toast');
 let sessionToken = sessionStorage.getItem(SESSION_STORAGE_KEY) || null;
 let toastTimer = null;
 
+// Cloudflare KVのlist()は書き込み直後は反映が遅れることがあるため、
+// サーバーへ再取得しに行かず、このローカル配列を唯一の描画元として
+// 作成・延長・再有効化・無効化・削除のたびに直接更新する。
+let tokens = [];
+
 function showToast(message) {
     toastEl.textContent = message;
     toastEl.hidden = false;
@@ -140,31 +145,48 @@ logoutBtn.addEventListener('click', () => {
 async function loadTokens() {
     try {
         const data = await apiFetch('/admin/tokens');
-        renderTokens(data);
+        tokens = data.tokens;
+        authEnabledToggle.checked = data.authEnabled !== false;
+        renderAll();
     } catch (err) {
         showToast(err.message);
     }
 }
 
-function renderTokens(data) {
-    const { tokens, summary, authEnabled } = data;
+// tokens配列(ローカルのソース・オブ・トゥルース)からテーブル・サマリーを再描画する。
+// サーバーへは問い合わせない(list()の遅延を避けるため)。
+function renderAll() {
+    const summary = { active: 0, expired: 0, revoked: 0 };
+    for (const t of tokens) summary[t.status]++;
     summaryText.textContent = `有効なトークン：${summary.active} / 期限切れ：${summary.expired} / 無効化：${summary.revoked}`;
-    authEnabledToggle.checked = authEnabled !== false;
 
     activeTableBody.innerHTML = '';
     expiredTableBody.innerHTML = '';
     revokedTableBody.innerHTML = '';
 
-    document.querySelector('#active_section .empty_text').hidden = tokens.some((t) => t.status === 'active');
-    document.querySelector('#expired_section .empty_text').hidden = tokens.some((t) => t.status === 'expired');
-    document.querySelector('#revoked_section .empty_text').hidden = tokens.some((t) => t.status === 'revoked');
+    document.querySelector('#active_section .empty_text').hidden = summary.active > 0;
+    document.querySelector('#expired_section .empty_text').hidden = summary.expired > 0;
+    document.querySelector('#revoked_section .empty_text').hidden = summary.revoked > 0;
 
-    for (const token of tokens) {
+    const sorted = [...tokens].sort((a, b) => b.createdAt - a.createdAt);
+    for (const token of sorted) {
         const row = buildTokenRow(token);
         if (token.status === 'active') activeTableBody.appendChild(row);
         else if (token.status === 'expired') expiredTableBody.appendChild(row);
         else revokedTableBody.appendChild(row);
     }
+}
+
+function upsertToken(record) {
+    const i = tokens.findIndex((t) => t.token === record.token);
+    if (i >= 0) tokens[i] = record;
+    else tokens.unshift(record);
+    renderAll();
+}
+
+function removeToken(tokenValue) {
+    tokens = tokens.filter((t) => t.token !== tokenValue);
+    renderAll();
 }
 
 function buildTokenRow(token) {
@@ -245,6 +267,14 @@ function buildActionsCell(token) {
         reactivateBtn.textContent = '再有効化';
         reactivateBtn.addEventListener('click', () => openDurationDialog('再有効化後の有効期限を選択', (preset, customHours) => reactivateToken(token.token, preset, customHours)));
         wrap.appendChild(reactivateBtn);
+
+        if (token.status === 'revoked') {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'small_btn danger_btn';
+            deleteBtn.textContent = '完全に削除';
+            deleteBtn.addEventListener('click', () => deleteToken(token.token));
+            wrap.appendChild(deleteBtn);
+        }
     }
 
     return wrap;
@@ -280,25 +310,12 @@ createForm.addEventListener('submit', async (e) => {
     try {
         const data = await apiFetch('/admin/tokens', { method: 'POST', body: JSON.stringify(body) });
         showToast('トークンを発行しました');
-        prependTokenRow(data.token);
+        upsertToken(data.token);
         showQrFor(data.token.token);
     } catch (err) {
         showToast(err.message);
     }
 });
-
-// Cloudflare KVのlist()は反映まで時間がかかることがあるため、
-// 作成直後のトークンは一覧再取得を待たずその場で先頭に追加する。
-function prependTokenRow(token) {
-    document.querySelector('#active_section .empty_text').hidden = true;
-    const row = buildTokenRow(token);
-    activeTableBody.insertBefore(row, activeTableBody.firstChild);
-    const summaryMatch = summaryText.textContent.match(/有効なトークン：(\d+) \/ 期限切れ：(\d+) \/ 無効化：(\d+)/);
-    if (summaryMatch) {
-        const active = Number(summaryMatch[1]) + 1;
-        summaryText.textContent = `有効なトークン：${active} / 期限切れ：${summaryMatch[2]} / 無効化：${summaryMatch[3]}`;
-    }
-}
 
 // ---- 延長・再有効化・無効化 ----
 
@@ -339,9 +356,9 @@ async function extendToken(tokenValue, preset, customHours) {
     const body = { expiryPreset: preset };
     if (preset === 'custom') body.customMs = customHours * 60 * 60 * 1000;
     try {
-        await apiFetch(`/admin/tokens/${encodeURIComponent(tokenValue)}/extend`, { method: 'POST', body: JSON.stringify(body) });
+        const data = await apiFetch(`/admin/tokens/${encodeURIComponent(tokenValue)}/extend`, { method: 'POST', body: JSON.stringify(body) });
         showToast('有効期限を延長しました');
-        loadTokens();
+        upsertToken(data.token);
     } catch (err) {
         showToast(err.message);
     }
@@ -351,9 +368,9 @@ async function reactivateToken(tokenValue, preset, customHours) {
     const body = { expiryPreset: preset };
     if (preset === 'custom') body.customMs = customHours * 60 * 60 * 1000;
     try {
-        await apiFetch(`/admin/tokens/${encodeURIComponent(tokenValue)}/reactivate`, { method: 'POST', body: JSON.stringify(body) });
+        const data = await apiFetch(`/admin/tokens/${encodeURIComponent(tokenValue)}/reactivate`, { method: 'POST', body: JSON.stringify(body) });
         showToast('トークンを再有効化しました');
-        loadTokens();
+        upsertToken(data.token);
     } catch (err) {
         showToast(err.message);
     }
@@ -362,9 +379,20 @@ async function reactivateToken(tokenValue, preset, customHours) {
 async function revokeToken(tokenValue) {
     if (!confirm('このトークンを無効化しますか？')) return;
     try {
-        await apiFetch(`/admin/tokens/${encodeURIComponent(tokenValue)}/revoke`, { method: 'POST', body: JSON.stringify({}) });
+        const data = await apiFetch(`/admin/tokens/${encodeURIComponent(tokenValue)}/revoke`, { method: 'POST', body: JSON.stringify({}) });
         showToast('トークンを無効化しました');
-        loadTokens();
+        upsertToken(data.token);
+    } catch (err) {
+        showToast(err.message);
+    }
+}
+
+async function deleteToken(tokenValue) {
+    if (!confirm('このトークンを完全に削除します。この操作は取り消せません。よろしいですか？')) return;
+    try {
+        await apiFetch(`/admin/tokens/${encodeURIComponent(tokenValue)}/delete`, { method: 'POST', body: JSON.stringify({}) });
+        showToast('トークンを完全に削除しました');
+        removeToken(tokenValue);
     } catch (err) {
         showToast(err.message);
     }
@@ -375,7 +403,9 @@ revokeAllBtn.addEventListener('click', async () => {
     try {
         const data = await apiFetch('/admin/tokens/revoke-all', { method: 'POST', body: JSON.stringify({}) });
         showToast(`${data.revokedCount}件のトークンを無効化しました`);
-        loadTokens();
+        const now = Date.now();
+        tokens = tokens.map((t) => (t.status === 'active' ? { ...t, status: 'revoked', revokedAt: now, updatedAt: now } : t));
+        renderAll();
     } catch (err) {
         showToast(err.message);
     }
@@ -396,16 +426,32 @@ authEnabledToggle.addEventListener('change', async () => {
 
 // ---- QRコード表示 ----
 
-function showQrFor(tokenValue) {
-    const url = `${PROTECTED_BASE_URL}?token=${encodeURIComponent(tokenValue)}`;
-    qrDisplay.innerHTML = '';
+function buildQrBlock(label, url) {
+    const block = document.createElement('div');
+    block.className = 'qr_block';
+
+    const labelEl = document.createElement('p');
+    labelEl.className = 'qr_block_label';
+    labelEl.textContent = label;
+    block.appendChild(labelEl);
+
     const qrBox = document.createElement('div');
-    qrDisplay.appendChild(qrBox);
-    new QRCode(qrBox, { text: url, width: 220, height: 220 });
+    block.appendChild(qrBox);
+    new QRCode(qrBox, { text: url, width: 200, height: 200 });
+
     const urlText = document.createElement('p');
-    urlText.id = 'qr_url_text';
+    urlText.className = 'qr_url_text';
     urlText.textContent = url;
-    qrDisplay.appendChild(urlText);
+    block.appendChild(urlText);
+
+    return block;
+}
+
+function showQrFor(tokenValue) {
+    qrDisplay.innerHTML = '';
+    qrDisplay.appendChild(buildQrBlock('/WebAR/', `${PROTECTED_BASE_URL}?token=${encodeURIComponent(tokenValue)}`));
+    qrDisplay.appendChild(buildQrBlock('/WebAR/auto/', `${PROTECTED_BASE_URL}auto/?token=${encodeURIComponent(tokenValue)}`));
+    document.getElementById('qr_section').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ---- 起動 ----

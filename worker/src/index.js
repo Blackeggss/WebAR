@@ -304,6 +304,24 @@ async function handleRevokeToken(request, env, tokenValue) {
     return json({ ok: true, token: toPublicRecord(record, now) }, { status: 200 }, request, env);
 }
 
+async function handleDeleteToken(request, env, tokenValue) {
+    const unauthorized = await requireAdmin(request, env);
+    if (unauthorized) return unauthorized;
+
+    const record = await env.TOKENS.get(TOKEN_PREFIX + tokenValue, 'json');
+    if (!record) return json({ ok: false, reason: 'not_found' }, { status: 404 }, request, env);
+
+    // 完全削除は無効化(revoked)済みのトークンのみ許可する。期限切れ(expired)は再有効化できる
+    // 必要があるため削除対象にしない(仕様どおりKVから消さない)。
+    const now = Date.now();
+    if (deriveStatus(record, now) !== 'revoked') {
+        return json({ ok: false, reason: 'not_revoked' }, { status: 400 }, request, env);
+    }
+
+    await env.TOKENS.delete(TOKEN_PREFIX + tokenValue);
+    return json({ ok: true }, { status: 200 }, request, env);
+}
+
 async function handleRevokeAll(request, env) {
     const unauthorized = await requireAdmin(request, env);
     if (unauthorized) return unauthorized;
@@ -372,6 +390,10 @@ export default {
             const revokeMatch = pathname.match(/^\/admin\/tokens\/([^/]+)\/revoke$/);
             if (revokeMatch && method === 'POST') {
                 return await handleRevokeToken(request, env, decodeURIComponent(revokeMatch[1]));
+            }
+            const deleteMatch = pathname.match(/^\/admin\/tokens\/([^/]+)\/delete$/);
+            if (deleteMatch && method === 'POST') {
+                return await handleDeleteToken(request, env, decodeURIComponent(deleteMatch[1]));
             }
             if (pathname === '/admin/settings' && method === 'POST') {
                 return await handleSettings(request, env);

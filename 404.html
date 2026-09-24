@@ -31,13 +31,23 @@
     </style>
 </head>
 <body>
-    <p>ページが見つかりません。
-URLが間違っている可能性があります。
-数秒後に公開ページへ移動します。</p>
+    <p id="not_found_text"></p>
     <script>
-        setTimeout(function () {
-            window.location.href = 'https://blackeggss.github.io/WebAR/public/';
-        }, 4000);
+        var remaining = 4;
+        var textEl = document.getElementById('not_found_text');
+        function render() {
+            textEl.textContent = 'ページが見つかりません。\nURLが間違っている可能性があります。\n' + remaining + '秒後に制限されたページへ移動します。';
+        }
+        render();
+        var timer = setInterval(function () {
+            remaining -= 1;
+            if (remaining <= 0) {
+                clearInterval(timer);
+                window.location.href = 'https://blackeggss.github.io/WebAR/public/';
+                return;
+            }
+            render();
+        }, 1000);
     </script>
 </body>
 </html>

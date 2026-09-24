@@ -5,9 +5,11 @@
 
 const WORKER_BASE = 'https://webar-auth.blackeggs-webar.workers.dev';
 const PUBLIC_URL = 'https://blackeggss.github.io/WebAR/public/';
-const REDIRECT_DELAY_MS = 4000;
+const REDIRECT_COUNTDOWN_SEC = 4;
 
-function showOverlay(message, { redirect } = {}) {
+// messagePrefix(理由の説明文)の後に「N秒後に制限されたページへ移動します。」を続けて表示し、
+// 1秒ごとにNをカウントダウンしながら0になったら/public/へ遷移する。
+function showOverlayWithCountdown(messagePrefix) {
     const overlay = document.createElement('div');
     overlay.id = 'auth_gate_overlay';
     const style = document.createElement('style');
@@ -35,16 +37,25 @@ function showOverlay(message, { redirect } = {}) {
         }
     `;
     const text = document.createElement('p');
-    text.textContent = message;
     overlay.appendChild(text);
     document.head.appendChild(style);
     document.body.appendChild(overlay);
 
-    if (redirect) {
-        setTimeout(() => {
+    let remaining = REDIRECT_COUNTDOWN_SEC;
+    const render = () => {
+        text.textContent = `${messagePrefix}\n${remaining}秒後に制限されたページへ移動します。`;
+    };
+    render();
+
+    const timer = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+            clearInterval(timer);
             window.location.href = PUBLIC_URL;
-        }, REDIRECT_DELAY_MS);
-    }
+            return;
+        }
+        render();
+    }, 1000);
 }
 
 // 認証OKならtrue、NGなら案内を表示してfalseを返す。
@@ -53,7 +64,7 @@ export async function ensureAuthorized() {
     const token = params.get('token');
 
     if (!token) {
-        showOverlay('文化祭会場のQRコードを読み取ってください。');
+        showOverlayWithCountdown('文化祭会場のQRコードを読み取ってください。');
         return false;
     }
 
@@ -70,10 +81,7 @@ export async function ensureAuthorized() {
     }
 
     if (!result || result.valid !== true) {
-        showOverlay(
-            'このQRコードは無効です。\n文化祭会場に表示されている\n新しいQRコードを読み取ってください。\n数秒後に公開ページへ移動します。',
-            { redirect: true },
-        );
+        showOverlayWithCountdown('このQRコードは無効です。\n文化祭会場に表示されている\n新しいQRコードを読み取ってください。');
         return false;
     }
 

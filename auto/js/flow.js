@@ -167,11 +167,10 @@ async function boot() {
         showToast('カメラを起動できませんでした');
         return;
     }
+    // 1枚目で実際に使うARの読み込みが終わるまでは、AR読み込み中の表示を残しておく
+    // (カメラ・モデルだけ準備できてもマスク画像が白いまま次に進めてしまわないようにするため)
+    await arEngine.setMaskUrl(maskPool[0]);
     arLoadingEl.classList.remove('ar_loading-show');
-
-    // 「タップして開始」を押す前から、1枚目で実際に使うARを装着しておく(専用のプレースホルダー
-    // 画像は使わない)。ここで早めに読み込み始めることで、開始画面が出る頃には表示が間に合いやすくなる
-    arEngine.setMaskUrl(maskPool[0]);
 
     // カメラ・AIモデルの読み込みが終わってから先読みを始める(帯域を取り合わないようにするため)
     preloadSessionAssets();

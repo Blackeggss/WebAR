@@ -46,9 +46,14 @@ html, body {
   z-index: 40;
 }
 
+/* ギャラリーボタンのラッパー(吹き出しの位置基準。ボタン自体はoverflow:hiddenなのでここに分離) */
+#gallery_btn_wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
 /* ギャラリーボタン(丸いサムネイル) */
 #gallery_btn {
-  position: relative;
   width: 52px;
   height: 52px;
   border-radius: 50%;

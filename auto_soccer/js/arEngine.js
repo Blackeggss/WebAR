@@ -97,30 +97,39 @@ function initThree() {
     }
 }
 
+// テクスチャの読み込み完了(または失敗)を待てるようPromiseを返す。呼び出し側の大半は
+// 完了を待たずファイア&フォーゲットで使うが、初回だけは読み込み完了までAR読み込み中の
+// 表示を残したいため、flow.js側でこの戻り値をawaitしている
 export function setMaskUrl(url) {
-    if (!url) {
-        const previousTexture = maskMaterial.map;
-        maskMaterial.map = null;
-        maskMaterial.needsUpdate = true;
-        if (previousTexture) previousTexture.dispose();
-        return;
-    }
-    const myToken = ++maskTextureRequestToken;
-    maskTextureLoader.load(url, (texture) => {
-        if (myToken !== maskTextureRequestToken) {
-            texture.dispose();
+    return new Promise((resolve) => {
+        if (!url) {
+            const previousTexture = maskMaterial.map;
+            maskMaterial.map = null;
+            maskMaterial.needsUpdate = true;
+            if (previousTexture) previousTexture.dispose();
+            resolve();
             return;
         }
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.generateMipmaps = false;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        const previousTexture = maskMaterial.map;
-        maskMaterial.map = texture;
-        maskMaterial.needsUpdate = true;
-        if (previousTexture) previousTexture.dispose();
-    }, undefined, (err) => {
-        console.error('ARマスクのテクスチャ読み込みに失敗しました: ', err);
+        const myToken = ++maskTextureRequestToken;
+        maskTextureLoader.load(url, (texture) => {
+            if (myToken !== maskTextureRequestToken) {
+                texture.dispose();
+                resolve();
+                return;
+            }
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.generateMipmaps = false;
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            const previousTexture = maskMaterial.map;
+            maskMaterial.map = texture;
+            maskMaterial.needsUpdate = true;
+            if (previousTexture) previousTexture.dispose();
+            resolve();
+        }, undefined, (err) => {
+            console.error('ARマスクのテクスチャ読み込みに失敗しました: ', err);
+            resolve(); // 失敗しても起動を止めない
+        });
     });
 }
 

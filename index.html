@@ -23,12 +23,16 @@
     <canvas id="output_canvas"></canvas>
 
     <div id="camera_controls">
-        <!-- ギャラリーボタン(シャッターボタンを挟んでカメラ切り替えボタンと対称の位置) -->
-        <button id="gallery_btn" aria-label="撮影した写真を見る">
-            <img id="gallery_btn_thumb" alt="">
+        <!-- ギャラリーボタン(シャッターボタンを挟んでカメラ切り替えボタンと対称の位置)。
+             #gallery_btn自体はサムネイルを丸くクリップするためoverflow:hiddenなので、
+             ボタンの外にはみ出す吹き出しはボタンの外側(このラッパー)に置く -->
+        <div id="gallery_btn_wrap">
+            <button id="gallery_btn" aria-label="撮影した写真を見る">
+                <img id="gallery_btn_thumb" alt="">
+            </button>
             <!-- 初回だけ表示する案内吹き出し(js/gallery.jsが表示/非表示を制御) -->
             <span id="gallery_btn_first_visit_tip" class="tip_bubble" hidden>ここから撮った写真の確認・保存ができるよ！</span>
-        </button>
+        </div>
 
         <!-- シャッターボタン -->
         <button id="shutter_btn" aria-label="撮影する">

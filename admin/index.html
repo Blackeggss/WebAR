@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文化祭 WebAR 管理画面</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+    <!-- ログイン画面 -->
+    <div id="login_screen">
+        <form id="login_form">
+            <h1>文化祭 WebAR 管理画面</h1>
+            <p class="login_lead">管理者パスワードを入力してください</p>
+            <input type="password" id="login_password" placeholder="パスワード" autocomplete="current-password" required>
+            <button type="submit">ログイン</button>
+            <p id="login_error" class="error_text" hidden></p>
+        </form>
+    </div>
+
+    <!-- ダッシュボード -->
+    <div id="dashboard_screen" hidden>
+        <header id="dashboard_header">
+            <h1>文化祭 WebAR 管理画面</h1>
+            <button id="logout_btn" class="secondary_btn">ログアウト</button>
+        </header>
+
+        <section id="summary_section">
+            <p id="summary_text">読み込み中…</p>
+            <label id="auth_enabled_row">
+                <input type="checkbox" id="auth_enabled_toggle">
+                認証を有効にする(オフにすると/ ・/auto/ ・/auto_soccer/ が全員使用不可になります)
+            </label>
+        </section>
+
+        <section id="qr_section">
+            <h2>現在表示するQRコード</h2>
+            <div id="qr_display">
+                <p id="qr_placeholder">トークン一覧の「QR表示」ボタンを押すとここに表示されます</p>
+            </div>
+        </section>
+
+        <section id="create_section">
+            <h2>新しいトークンを発行</h2>
+            <form id="create_form">
+                <label for="create_expiry">有効期限</label>
+                <select id="create_expiry">
+                    <option value="1h">1時間</option>
+                    <option value="6h">6時間</option>
+                    <option value="12h">12時間</option>
+                    <option value="24h" selected>24時間(デフォルト)</option>
+                    <option value="3d">3日</option>
+                    <option value="7d">7日</option>
+                    <option value="unlimited">無期限</option>
+                    <option value="custom">カスタム</option>
+                </select>
+                <input type="number" id="create_custom_hours" placeholder="カスタム時間数" min="1" hidden>
+                <button type="submit">発行する</button>
+            </form>
+        </section>
+
+        <section id="active_section">
+            <h2>有効なトークン</h2>
+            <div class="table_wrap">
+                <table id="active_table">
+                    <thead>
+                        <tr>
+                            <th>トークン</th>
+                            <th>発行日時</th>
+                            <th>有効期限</th>
+                            <th>状態</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <p class="empty_text" hidden>有効なトークンはありません</p>
+            <button id="revoke_all_btn" class="danger_btn">全トークンを無効化</button>
+        </section>
+
+        <section id="expired_section">
+            <h2>期限切れトークン</h2>
+            <div class="table_wrap">
+                <table id="expired_table">
+                    <thead>
+                        <tr>
+                            <th>トークン</th>
+                            <th>発行日時</th>
+                            <th>有効期限</th>
+                            <th>状態</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <p class="empty_text" hidden>期限切れのトークンはありません</p>
+        </section>
+
+        <section id="revoked_section">
+            <h2>無効化済みトークン</h2>
+            <div class="table_wrap">
+                <table id="revoked_table">
+                    <thead>
+                        <tr>
+                            <th>トークン</th>
+                            <th>発行日時</th>
+                            <th>有効期限</th>
+                            <th>状態</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <p class="empty_text" hidden>無効化済みのトークンはありません</p>
+        </section>
+    </div>
+
+    <!-- カスタム延長・再有効化の期限入力ダイアログ -->
+    <div id="duration_dialog" hidden>
+        <div id="duration_dialog_box">
+            <h3 id="duration_dialog_title">期限を選択</h3>
+            <select id="duration_dialog_select">
+                <option value="1h">1時間</option>
+                <option value="6h">6時間</option>
+                <option value="12h">12時間</option>
+                <option value="24h">24時間</option>
+                <option value="3d">3日</option>
+                <option value="7d">7日</option>
+                <option value="unlimited">無期限</option>
+                <option value="custom">カスタム</option>
+            </select>
+            <input type="number" id="duration_dialog_custom_hours" placeholder="カスタム時間数" min="1" hidden>
+            <div class="dialog_buttons">
+                <button id="duration_dialog_cancel" class="secondary_btn">キャンセル</button>
+                <button id="duration_dialog_confirm">決定</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" hidden></div>
+
+    <script type="module" src="js/admin.js"></script>
+</body>
+</html>

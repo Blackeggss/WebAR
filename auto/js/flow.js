@@ -4,6 +4,11 @@
 
 import * as arEngine from './arEngine.js';
 import { saveSession } from './db.js';
+import { ensureAuthorized } from '../../js/auth-gate.js';
+
+if (!(await ensureAuthorized())) {
+    throw new Error('WebAR: 認証されていないため起動を中止しました');
+}
 
 const video = document.getElementById('webcam');
 const outputCanvas = document.getElementById('output_canvas');

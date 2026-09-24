@@ -2,11 +2,6 @@ import * as THREE from 'three';
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8";
 import { initGalleryDeferred, capturePhotoForGallery } from './gallery.js';
 import { initArSwitcherDeferred, setOnMaskChange, setArSwitcherLayout } from './arSwitcher.js';
-import { ensureAuthorized } from './auth-gate.js';
-
-if (!(await ensureAuthorized())) {
-    throw new Error('WebAR: 認証されていないため起動を中止しました');
-}
 
 const video = document.getElementById('webcam');
 const outputCanvas = document.getElementById('output_canvas');

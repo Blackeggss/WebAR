@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <title>WebAR</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://storage.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="stylesheet" href="css/style.css">
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
+</head>
+<body>
+
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="output_canvas"></canvas>
+
+    <div id="camera_controls">
+        <!-- ギャラリーボタン(シャッターボタンを挟んでカメラ切り替えボタンと対称の位置)。
+             #gallery_btn自体はサムネイルを丸くクリップするためoverflow:hiddenなので、
+             ボタンの外にはみ出す吹き出しはボタンの外側(このラッパー)に置く -->
+        <div id="gallery_btn_wrap">
+            <button id="gallery_btn" aria-label="撮影した写真を見る">
+                <img id="gallery_btn_thumb" alt="">
+            </button>
+            <!-- 初回だけ表示する案内吹き出し(js/gallery.jsが表示/非表示を制御) -->
+            <span id="gallery_btn_first_visit_tip" class="tip_bubble" hidden>ここから撮った写真の確認・保存ができるよ！</span>
+        </div>
+
+        <!-- シャッターボタン -->
+        <button id="shutter_btn" aria-label="撮影する">
+            <span class="shutter_inner"></span>
+        </button>
+
+        <!-- カメラ切り替えボタン -->
+        <button id="switch_camera_btn" aria-label="カメラを切り替える">
+            <svg class="switch_icon" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"/>
+                <path d="M1 20v-6h6"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- ARマスク切り替え(指ドラッグ+慣性で横/縦にめくれるカバーフロー) -->
+    <div id="ar_switcher" data-orientation="horizontal" data-side="" data-rotate="none">
+        <div id="ar_switcher_frame">
+            <div id="ar_switcher_track">
+                <!-- 各項目はbutton要素にしている(iOS Safariでoverflow:visibleにより枠外へはみ出た
+                     div/imgへのタップ・ドラッグ開始が正しく認識されない問題への対策。実際にbutton要素の
+                     「+」だけは枠外でも操作できていたことから判明した) -->
+                <div class="ar_switcher_item" data-kind="add">
+                    <button type="button" id="ar_switcher_add_btn" class="ar_switcher_item_btn" aria-label="ARを追加">
+                        <span class="ar_switcher_item_inner">
+                            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                <path d="M12 5v14"/>
+                                <path d="M5 12h14"/>
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+                <div class="ar_switcher_item" data-kind="mask" data-mask-id="builtin:ar_rabbit">
+                    <button type="button" class="ar_switcher_item_btn" aria-label="このARを選択">
+                        <span class="ar_switcher_item_inner">
+                            <img src="../assets/ar_rabbit.png" alt="">
+                        </span>
+                    </button>
+                </div>
+                <div class="ar_switcher_item" data-kind="mask" data-mask-id="builtin:ar_redpanda">
+                    <button type="button" class="ar_switcher_item_btn" aria-label="このARを選択">
+                        <span class="ar_switcher_item_inner">
+                            <img src="../assets/ar_redpanda.png" alt="">
+                        </span>
+                    </button>
+                </div>
+                <div class="ar_switcher_item" data-kind="mask" data-mask-id="builtin:ar_squirrel">
+                    <button type="button" class="ar_switcher_item_btn" aria-label="このARを選択">
+                        <span class="ar_switcher_item_inner">
+                            <img src="../assets/ar_squirrel.png" alt="">
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ARマスクのアップロード用ポップオーバー -->
+    <div id="ar_upload_popover" hidden>
+        <button id="ar_upload_btn">画像をアップロード</button>
+        <p id="ar_upload_note">正方形・半透明の画像をご用意ください</p>
+        <input type="file" id="ar_upload_input" accept="image/*" hidden>
+    </div>
+
+    <!-- PC専用カメラ選択 -->
+    <div id="camera_picker" hidden>
+        <div id="camera_picker_title">カメラを選択</div>
+        <ul id="camera_picker_list"></ul>
+    </div>
+
+    <!-- ローディング表示 -->
+    <div id="ar_loading">
+        <span class="ar_loading_spinner"></span>
+        <span class="ar_loading_text">AR読み込み中…</span>
+    </div>
+
+    <!-- シャッター時フラッシュ -->
+    <div id="flash_overlay"></div>
+
+    <!-- トースト -->
+    <div id="toast"></div>
+
+    <!-- 撮影済み写真ギャラリー -->
+    <div id="gallery_overlay" hidden>
+        <div id="gallery_stage">
+            <div id="gallery_track">
+                <div class="gallery_slide"><img alt="" draggable="false"></div>
+                <div class="gallery_slide"><img alt="" draggable="false"></div>
+                <div class="gallery_slide"><img alt="" draggable="false"></div>
+            </div>
+        </div>
+
+        <!-- スマホ横・PC専用: 画面最上部に一時表示する日時トースト -->
+        <div id="gallery_date_toast">
+            <div id="gallery_date_line"></div>
+            <div id="gallery_time_line"></div>
+        </div>
+
+        <!-- PC専用: 左右の写真切替矢印 -->
+        <button id="gallery_prev_arrow_btn" aria-label="前の写真">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 5l-7 7 7 7"/>
+            </svg>
+        </button>
+        <button id="gallery_next_arrow_btn" aria-label="次の写真">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 5l7 7-7 7"/>
+            </svg>
+        </button>
+
+        <div id="gallery_thumb_strip"></div>
+
+        <div id="gallery_toolbar">
+            <button id="gallery_download_btn" aria-label="この写真を保存">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3v12"/>
+                    <path d="M7 10l5 5 5-5"/>
+                    <path d="M4 19h16"/>
+                </svg>
+                <!-- 初回だけ表示する案内吹き出し(js/gallery.jsが表示/非表示を制御) -->
+                <span id="gallery_first_visit_tip" class="tip_bubble" hidden>ここから写真を保存できるよ！</span>
+            </button>
+
+            <!-- スマホ縦専用: 常時表示の日時バッジ(旧「すべて保存」ボタンの位置) -->
+            <div id="gallery_date_badge">
+                <div id="gallery_date_badge_date"></div>
+                <div id="gallery_date_badge_time"></div>
+            </div>
+
+            <button id="gallery_delete_btn" aria-label="この写真を削除">
+                <svg class="gallery_delete_icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 7h16"/>
+                    <path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7"/>
+                    <path d="M6 7l1 12.5A2 2 0 0 0 9 21h6a2 2 0 0 0 2-2.5L18 7"/>
+                    <path d="M10 11v6"/>
+                    <path d="M14 11v6"/>
+                </svg>
+                <span class="gallery_delete_confirm_label">写真を削除</span>
+            </button>
+        </div>
+
+        <button id="gallery_close_btn" aria-label="閉じる">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M5 5l14 14"/>
+                <path d="M19 5L5 19"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- モーション許可オーバーレイ -->
+    <div id="motion_permission_overlay" hidden>
+        <div id="tap_icon" aria-hidden="true">
+            <svg viewBox="0 -65 200 275" xmlns="http://www.w3.org/2000/svg">
+                <g class="hand">
+                    <path
+                        d="
+                            M 72 167
+                            C 65 165, 61 160, 61 153
+                            L 61 145
+                            L 30 111
+                            C 24 104, 25 94, 32 89
+                            C 38 84, 47 85, 53 91
+                            L 65 103
+                            L 65 12
+                            C 65 3, 71 -3, 79 -3
+                            C 87 -3, 93 3, 93 12
+                            L 93 86
+                            L 93 73
+                            C 93 50, 99 44, 107 44
+                            C 115 44, 121 50, 121 73
+                            L 121 89
+                            L 121 84
+                            C 121 61, 127 55, 135 55
+                            C 143 55, 149 61, 149 84
+                            L 149 98
+                            L 149 94
+                            C 149 71, 155 65, 163 65
+                            C 171 65, 177 71, 177 94
+                            L 177 125
+                            C 177 136, 174 143, 169 151
+                            C 164 160, 155 166, 145 169
+                            C 124 175, 94 175, 72 167
+                            Z
+                        "
+                        fill="none"
+                        stroke="white"
+                        stroke-width="7"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                    <path class="finger_line" d="M 93 86 L 93 12" />
+                    <path class="finger_line" d="M 121 89 L 121 73" />
+                    <path class="finger_line" d="M 149 98 L 149 84" />
+                </g>
+            </svg>
+            <span class="tap_ripple"></span>
+            <span class="tap_dot"></span>
+        </div>
+        <span id="motion_permission_text">タップして開始</span>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

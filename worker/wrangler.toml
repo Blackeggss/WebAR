@@ -1,0 +1,15 @@
+name = "webar-auth"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+workers_dev = true
+preview_urls = false
+
+# 秘密情報は含まない(ADMIN_PASSWORD・ADMIN_SESSION_SECRETは`wrangler secret put`で別途設定)。
+# GitHub Pagesの本番オリジンに加えて、ローカル動作確認用にlocalhost/127.0.0.1系オリジンも許可する
+# (コード側でlocalhost/127.0.0.1は任意ポートを許可する正規表現チェックを行うため、ここには本番オリジンのみ記載)。
+[vars]
+ALLOWED_ORIGIN = "https://blackeggss.github.io"
+
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "326463c55c7247afa396aad30d4ecd7b"

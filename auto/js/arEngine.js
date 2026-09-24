@@ -147,7 +147,7 @@ async function initializeFaceLandmarker() {
             outputFaceBlendshapes: false,
             outputFacialTransformationMatrixes: true,
             runningMode: runningMode,
-            numFaces: 1
+            numFaces: MAX_FACES
         });
     })();
 

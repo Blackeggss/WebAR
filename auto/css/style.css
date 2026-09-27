@@ -9,6 +9,25 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
 }
 
+:root {
+  --flow_ui_rotate: 0deg;
+}
+
+/* ポーズ名・カウントダウン等の「追加の文字」まわりのUIを、端末の傾きに合わせて回転させる。
+   保存写真・AR自体の向き補正(js/arEngine.js)とは別物で、対象にも撮影済み写真(preview_img・
+   layout_gridのサムネイル)は含まない。すでに自身のtransformを使っている要素
+   (countdown_number・primary_btn)は直接ではなく専用ラッパー(.flow_orient_rotate)で包む */
+.screen_label,
+.screen_result,
+#pose_photo,
+.roulette,
+.praise_label,
+.thanks_label,
+.flow_orient_rotate {
+  transform: rotate(var(--flow_ui_rotate));
+  transition: transform 0.35s ease;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;

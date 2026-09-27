@@ -92,7 +92,9 @@
         <!-- 0. 開始ボタン(カメラ・ARの準備が整ってから表示し、押されるまで撮影シーケンスを始めない) -->
         <section class="screen" id="screen_start" hidden>
             <div class="screen_label">準備ができたらタップして開始！</div>
-            <button type="button" class="primary_btn" id="start_btn">開始</button>
+            <div class="flow_orient_rotate">
+                <button type="button" class="primary_btn" id="start_btn">開始</button>
+            </div>
         </section>
 
         <!-- 1. ポーズルーレット -->
@@ -115,7 +117,9 @@
         <!-- 3. カウントダウン(準備の文言をそのまま出し続ける) -->
         <section class="screen screen-transparent" id="screen_countdown" hidden>
             <div class="screen_label screen_label-top">準備してー！</div>
-            <div class="countdown_number" id="countdown_number">3</div>
+            <div class="flow_orient_rotate">
+                <div class="countdown_number" id="countdown_number">3</div>
+            </div>
         </section>
 
         <!-- 4. 撮影プレビュー -->
@@ -127,7 +131,9 @@
         <!-- 5. グリッドレイアウト演出 -->
         <section class="screen" id="screen_layout" hidden>
             <div class="layout_grid" id="layout_grid"></div>
-            <button type="button" class="primary_btn" id="layout_next_btn" hidden>次へ</button>
+            <div class="flow_orient_rotate">
+                <button type="button" class="primary_btn" id="layout_next_btn" hidden>次へ</button>
+            </div>
         </section>
 
         <!-- 6. サンクス -->

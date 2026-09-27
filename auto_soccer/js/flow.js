@@ -68,15 +68,13 @@ const AR_MASKS = [
 const FINAL_MASK = '../assets/auto/ar_soccer.png';
 const PRAISE_TEXTS = ['最高！', 'バッチリ！', 'いいね！', 'ナイスショット！'];
 
-let shotCount = 4; // 縦4枚 / 横・PC3枚
-let sessionType = 'portrait';
+let sessionType = 'portrait'; // 'portrait'(系統A・4枚) / 'landscape'(系統B・3枚)。1枚目撮影時に確定する
 let posePool = [];
 let maskPool = [];
 const capturedShots = []; // { dataUrl, faceRectsNormalized }
+const shotFamilies = []; // 各ショット撮影時(シャッターが切れた瞬間)の系統('A'|'B')。混在判定に使う
 
-// 端末の向きだけで決まる縦/横は起動直後にわかるので、ポーズ・ARの抽選もここで済ませておく。
-// こうすることで「どの画像が必要か」が早期に確定し、カメラ/モデルの読み込みと並行して
-// 必要な分だけ先読み(preloadSessionAssets)できるようにする
+// ポーズ・ARの抽選は起動直後に済ませておく(この時点ではまだ画像を読み込まない)。
 // 通常ショット用のARプールを作る: 最終カット専用のFINAL_MASKは重複して出さないよう除外する
 function buildMaskPool() {
     const pool = AR_MASKS.filter((url) => url !== FINAL_MASK);
@@ -84,8 +82,6 @@ function buildMaskPool() {
 }
 
 function decideSessionPlan() {
-    sessionType = window.innerHeight > window.innerWidth ? 'portrait' : 'landscape';
-    shotCount = sessionType === 'portrait' ? 4 : 3;
     posePool = shuffleArray(POSES);
     maskPool = buildMaskPool();
 }
@@ -99,11 +95,14 @@ function preloadImage(url) {
     });
 }
 
-// このセッションで実際に使う分だけ(最終カット含め縦4枚/横3枚)を先読みする。5種類全部ではなく
-// 使う分だけに絞ることでダウンロード量を減らす。カメラ・モデルの帯域と取り合わないよう、
+// このセッションで使う可能性がある分だけ(最大構成である縦4枚分の非最終3枚+最終カット)を先読みする。
+// 5種類全部ではなく使う分だけに絞ることでダウンロード量を減らす。カメラ・モデルの帯域と取り合わないよう、
 // それらの読み込みが終わった後に呼ぶ(boot()参照)。完了を待つ必要はないのでawaitしない
+// (実際の撮影枚数は1枚目のシャッター時点の傾きで3枚/4枚のどちらかに決まるため、起動時点ではまだ
+//  確定していない。最大構成分を先読みしておけば不足は起きない)
+const MAX_NON_FINAL_SHOTS = 3;
 function preloadSessionAssets() {
-    for (let i = 0; i < shotCount - 1; i++) {
+    for (let i = 0; i < MAX_NON_FINAL_SHOTS; i++) {
         const poseIndex = POSES.indexOf(posePool[i]) + 1;
         preloadImage(`../assets/pose/pose_${poseIndex}.jpg`);
         preloadImage(maskPool[i]);
@@ -151,6 +150,40 @@ function flashEffect() {
     flashOverlay.classList.add('flash-active');
 }
 
+// ---- 端末の傾き・画面ロック状態から9パターンを判定 ----
+// スマホ縦向きを0度とし、時計回りを正の角度として扱う(https://blackeggss.github.io/WebAR/と同じ規約)。
+// 系統A(縦持ち想定・4枚): パターン1,2,7,8,9 / 系統B(横持ち想定・3枚): パターン3,4,5,6
+// uiRotateDegはポーズ名・カウントダウン等の追加UI文字を、今の持ち方に合わせて読みやすい向きへ
+// 回転させるための角度(保存写真・AR自体の向き補正とは別物で、対象も回転方向も異なる)
+function classifyOrientationPattern() {
+    const info = arEngine.getOrientationInfo();
+
+    if (info.isUpsideDown) {
+        if (info.lockedMode) return { pattern: 9, family: 'A', uiRotateDeg: 180 };
+        return info.upsideDownDir === 1
+            ? { pattern: 7, family: 'A', uiRotateDeg: -90 }
+            : { pattern: 8, family: 'A', uiRotateDeg: 90 };
+    }
+    if (info.lockedMode) {
+        if (info.lockedEarlyZone === 'ccw') return { pattern: 4, family: 'B', uiRotateDeg: 90 };
+        if (info.lockedEarlyZone === 'cw') return { pattern: 6, family: 'B', uiRotateDeg: -90 };
+        return { pattern: 2, family: 'A', uiRotateDeg: 0 };
+    }
+    if (info.rotationState === 'ccw') return { pattern: 3, family: 'B', uiRotateDeg: 0 };
+    if (info.rotationState === 'cw') return { pattern: 5, family: 'B', uiRotateDeg: 0 };
+    return { pattern: 1, family: 'A', uiRotateDeg: 0 };
+}
+
+// ポーズ名・カウントダウン等の追加UI文字の向きを、現在の傾きに合わせて継続的に追従させる。
+// (すでに常時追跡済みの値を読むだけの軽い処理なので、短い間隔のポーリングでも重くならない)
+let lastAppliedUiRotateDeg = null;
+function syncUiRotation() {
+    const { uiRotateDeg } = classifyOrientationPattern();
+    if (uiRotateDeg === lastAppliedUiRotateDeg) return;
+    lastAppliedUiRotateDeg = uiRotateDeg;
+    document.documentElement.style.setProperty('--flow_ui_rotate', `${uiRotateDeg}deg`);
+}
+
 // ---- 起動 ----
 async function boot() {
     decideSessionPlan(); // ポーズ・ARの抽選だけ先に済ませておく(この時点ではまだ画像を読み込まない)
@@ -177,6 +210,9 @@ async function boot() {
             await showTapToStart();
         }
     }
+
+    syncUiRotation();
+    setInterval(syncUiRotation, 200);
 
     showScreen('start');
     await waitForStartButton();
@@ -289,10 +325,12 @@ async function runCountdownAndCapture(isFinal) {
         countdownNumberEl.style.animation = '';
         await sleep(stepMs);
     }
+    // シャッターが切れる瞬間の傾き・ロック状態から、このショットの系統(A/B)を確定する
+    const { family } = classifyOrientationPattern();
     flashEffect();
     const result = await arEngine.capturePhoto();
     await sleep(150);
-    return result;
+    return { ...result, family };
 }
 
 async function runPreviewStep(dataUrl) {
@@ -302,22 +340,46 @@ async function runPreviewStep(dataUrl) {
     await sleep(4000);
 }
 
+// 1枚撮影する(ポーズ決め→AR準備→カウントダウン→撮影→プレビュー)。系統をshotFamiliesに記録する
+async function runOneShot(isFirst, isFinal, poseIndexInPool) {
+    const pose = isFinal ? null : posePool[poseIndexInPool];
+    const maskUrl = isFinal ? FINAL_MASK : maskPool[poseIndexInPool];
+
+    await runPoseStep(isFirst, isFinal, pose, maskUrl);
+    await runArReadyStep();
+    const { dataUrl, faceRectsNormalized, family } = await runCountdownAndCapture(isFinal);
+    capturedShots.push({ dataUrl, faceRectsNormalized });
+    shotFamilies.push(family);
+    await runPreviewStep(dataUrl);
+}
+
 // ---- 撮影シーケンス全体 ----
+// 撮影枚数(3枚/4枚)は1枚目のシャッターが切れた瞬間の傾き・ロック状態(系統A/B)だけで確定する
+// (系統B=1枚目なら常に3枚で終了。2・3枚目で系統Aが混ざっても4枚には延長しない)
 async function runSequence() {
-    // sessionType/shotCount/posePool/maskPoolはboot()内のdecideSessionPlan()で決定済み
     capturedShots.length = 0;
+    shotFamilies.length = 0;
 
-    for (let i = 0; i < shotCount; i++) {
-        const isFirst = i === 0;
-        const isFinal = i === shotCount - 1;
-        const pose = isFinal ? null : posePool[i];
-        const maskUrl = isFinal ? FINAL_MASK : maskPool[i];
+    await runOneShot(true, false, 0);
+    const totalShots = shotFamilies[0] === 'B' ? 3 : 4;
+    sessionType = shotFamilies[0] === 'B' ? 'landscape' : 'portrait';
 
-        await runPoseStep(isFirst, isFinal, pose, maskUrl);
-        await runArReadyStep();
-        const { dataUrl, faceRectsNormalized } = await runCountdownAndCapture(isFinal);
-        capturedShots.push({ dataUrl, faceRectsNormalized });
-        await runPreviewStep(dataUrl);
+    await runOneShot(false, false, 1);
+
+    const shot3IsFinal = totalShots === 3;
+    await runOneShot(false, shot3IsFinal, 2);
+
+    if (totalShots === 4) {
+        await runOneShot(false, true, 3); // isFinalのためposeIndexInPoolは使われない
+    }
+
+    // 1枚目と系統が異なるショットが1つでもあれば「混在」とみなし、まとめて表示のグリッドだけを
+    // 省略して選手カード作成へ進む(カード作成自体は最後のショットの写真を使うので影響を受けない)
+    const mixedFamily = shotFamilies.some((f) => f !== shotFamilies[0]);
+    if (mixedFamily) {
+        arEngine.shutdownCamera();
+        await runCardBuilderStep();
+        return;
     }
 
     await runLayoutStep();

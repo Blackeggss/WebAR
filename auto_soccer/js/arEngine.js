@@ -839,6 +839,12 @@ export function isMaskVisible() {
     return maskVisible;
 }
 
+// 端末の傾き・画面ロック状態の現在値をflow.js側へ公開する(継続的に追跡済みの値を読むだけなので軽い)。
+// flow.js側で「今どの向きパターンに該当するか」を判定するのに使う
+export function getOrientationInfo() {
+    return { lockedMode, isUpsideDown, upsideDownDir, lockedEarlyZone, rotationState };
+}
+
 export function initArEngine(videoEl, canvasEl) {
     video = videoEl;
     outputCanvas = canvasEl;

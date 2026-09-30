@@ -184,6 +184,8 @@ function syncUiRotation() {
     if (uiRotateDeg === lastAppliedUiRotateDeg) return;
     lastAppliedUiRotateDeg = uiRotateDeg;
     document.documentElement.style.setProperty('--flow_ui_rotate', `${uiRotateDeg}deg`);
+    // 「準備してー！」等の上部固定文言をCSS側(data-ui-rotate)で回転角に応じて再配置するための目印
+    document.documentElement.setAttribute('data-ui-rotate', String(uiRotateDeg));
 }
 
 // ---- 起動 ----

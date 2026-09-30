@@ -91,54 +91,64 @@
 
         <!-- 0. 開始ボタン(カメラ・ARの準備が整ってから表示し、押されるまで撮影シーケンスを始めない) -->
         <section class="screen" id="screen_start" hidden>
-            <div class="screen_label">準備ができたらタップして開始！</div>
-            <div class="flow_orient_rotate">
+            <div class="screen_content">
+                <div class="screen_label">準備ができたらタップして開始！</div>
                 <button type="button" class="primary_btn" id="start_btn">開始</button>
             </div>
         </section>
 
         <!-- 1. ポーズルーレット -->
         <section class="screen" id="screen_pose" hidden>
-            <div class="screen_label" id="pose_intro_label">最初のポーズ！</div>
-            <div class="roulette" id="pose_roulette_wrap">
-                <div class="roulette_frame">
-                    <div class="roulette_track" id="pose_roulette_track"></div>
+            <div class="screen_content">
+                <div class="screen_label" id="pose_intro_label">最初のポーズ！</div>
+                <div class="roulette" id="pose_roulette_wrap">
+                    <div class="roulette_frame">
+                        <div class="roulette_track" id="pose_roulette_track"></div>
+                    </div>
                 </div>
+                <div class="screen_result" id="pose_result_label" hidden></div>
+                <img id="pose_photo" alt="" hidden>
             </div>
-            <div class="screen_result" id="pose_result_label" hidden></div>
-            <img id="pose_photo" alt="" hidden>
         </section>
 
         <!-- 2. AR装着・準備 -->
         <section class="screen screen-transparent" id="screen_ar_ready" hidden>
-            <div class="screen_label screen_label-top">準備してー！</div>
+            <div class="screen_content">
+                <div class="screen_label screen_label-top">準備してー！</div>
+            </div>
         </section>
 
         <!-- 3. カウントダウン(準備の文言をそのまま出し続ける) -->
         <section class="screen screen-transparent" id="screen_countdown" hidden>
-            <div class="screen_label screen_label-top">準備してー！</div>
-            <div class="flow_orient_rotate">
+            <div class="screen_content">
+                <div class="screen_label screen_label-top">準備してー！</div>
                 <div class="countdown_number" id="countdown_number">3</div>
             </div>
         </section>
 
         <!-- 4. 撮影プレビュー -->
         <section class="screen" id="screen_preview" hidden>
-            <img id="preview_img" alt="">
-            <div class="praise_label" id="praise_label"></div>
+            <div class="screen_content">
+                <img id="preview_img" alt="">
+                <div class="praise_label" id="praise_label"></div>
+            </div>
         </section>
 
         <!-- 5. グリッドレイアウト演出 -->
         <section class="screen" id="screen_layout" hidden>
-            <div class="layout_grid" id="layout_grid"></div>
-            <div class="flow_orient_rotate">
+            <div class="screen_content">
+                <div class="layout_grid_counter_rotate">
+                    <div class="layout_grid" id="layout_grid"></div>
+                </div>
                 <button type="button" class="primary_btn" id="layout_next_btn" hidden>次へ</button>
             </div>
         </section>
 
         <!-- 6. サンクス -->
         <section class="screen" id="screen_thanks" hidden>
-            <div class="thanks_label">撮影ありがとうございました！</div>
+            <div class="screen_content">
+                <div class="thanks_label">撮影ありがとうございました！</div>
+            </div>
         </section>
 
     </div>

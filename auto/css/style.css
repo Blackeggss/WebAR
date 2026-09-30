@@ -13,18 +13,21 @@ html, body {
   --flow_ui_rotate: 0deg;
 }
 
-/* ポーズ名・カウントダウン等の「追加の文字」まわりのUIを、端末の傾きに合わせて回転させる。
-   保存写真・AR自体の向き補正(js/arEngine.js)とは別物で、対象にも撮影済み写真(preview_img・
-   layout_gridのサムネイル)は含まない。すでに自身のtransformを使っている要素
-   (countdown_number・primary_btn)は直接ではなく専用ラッパー(.flow_orient_rotate)で包む */
-.screen_label,
-.screen_result,
-#pose_photo,
-.roulette,
-.praise_label,
-.thanks_label,
-.flow_orient_rotate {
+/* 各画面の中身(.screen_content)をまとめて回転させる。.screen自体ではなくその中の
+   ラッパーを回転させているのは、.screenが持つ半透明の背景(画面全体を薄暗くする演出)まで
+   回転すると画面の角に隙間ができてしまうため。.screen_contentは常にinset:0(画面いっぱい)
+   なので、要素ごとの中心ではなく画面の中心を支点に回転する。保存写真・AR自体の向き補正
+   (js/arEngine.js)とは別物。撮影済み写真の格子(#layout_grid)だけは下で打ち消す */
+.screen_content {
   transform: rotate(var(--flow_ui_rotate));
+  transition: transform 0.35s ease;
+}
+
+/* グリッド(#layout_grid)は親.screenの回転を打ち消して向きを保ったままにする。
+   #layout_grid自身は完成演出(spin-once)で自前のtransformを使うため、
+   打ち消しは別のラッパー要素に持たせる */
+.layout_grid_counter_rotate {
+  transform: rotate(calc(var(--flow_ui_rotate) * -1));
   transition: transform 0.35s ease;
 }
 
@@ -161,9 +164,21 @@ html, body {
   100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
 }
 
-/* ---- 画面共通 ---- */
+/* ---- 画面共通 ----
+   .screenは画面全体の背景(薄暗さ)・クリック可否だけを持つ静止した枠。回転はしない。
+   その中の.screen_contentが実際の文字・画像・ボタンを画面中心を支点に回転させる */
 #screens { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
 .screen {
+  position: absolute;
+  inset: 0;
+  color: #fff;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.35);
+}
+.screen[hidden] { display: none; }
+.screen-transparent { background: transparent; pointer-events: none; }
+
+.screen_content {
   position: absolute;
   inset: 0;
   display: flex;
@@ -171,21 +186,41 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: #fff;
   text-align: center;
   padding: 24px;
-  pointer-events: auto;
-  background: rgba(0, 0, 0, 0.35);
 }
-.screen[hidden] { display: none; }
-.screen-transparent { background: transparent; pointer-events: none; }
 
 .screen_label {
   font-size: 26px;
   font-weight: 700;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
 }
-.screen_label-top { position: absolute; top: max(48px, env(safe-area-inset-top, 48px)); }
+/* 「準備してー！」等の上部固定文言: 支点が画面中心になったことで、回転後も常に画面の
+   物理的な上端に来るよう、現在の回転角(data-ui-rotate)に応じて回転前の位置(上/左/右/下)を
+   あらかじめ変えておく(回転で移動した先が画面上端になるように逆算した位置) */
+.screen_label-top {
+  position: absolute;
+  top: max(48px, env(safe-area-inset-top, 48px));
+  left: 50%;
+  transform: translateX(-50%);
+}
+[data-ui-rotate="90"] .screen_label-top {
+  top: 50%;
+  left: max(48px, env(safe-area-inset-left, 48px));
+  transform: translateY(-50%);
+}
+[data-ui-rotate="-90"] .screen_label-top {
+  top: 50%;
+  left: auto;
+  right: max(48px, env(safe-area-inset-right, 48px));
+  transform: translateY(-50%);
+}
+[data-ui-rotate="180"] .screen_label-top {
+  top: auto;
+  bottom: max(48px, env(safe-area-inset-bottom, 48px));
+  left: 50%;
+  transform: translateX(-50%);
+}
 
 .screen_result {
   font-size: 24px;

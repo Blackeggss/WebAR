@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8";
-import { initGalleryDeferred, capturePhotoForGallery } from './gallery.js';
+import { initGalleryDeferred, capturePhotoForGallery, openGalleryViewer } from './gallery.js';
 import { initArSwitcherDeferred, setOnMaskChange, setArSwitcherLayout } from './arSwitcher.js';
 import { ensureAuthorized } from './auth-gate.js';
 
@@ -1048,34 +1048,12 @@ async function takePhoto() {
 
     const capturedAtMs = Date.now();
     const fileName = `photo_${capturedAtMs}.png`;
-    const file = new File([blob], fileName, { type: 'image/png' });
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-            await navigator.share({ files: [file] });
-            // サイトへの保存(IndexedDB)は表示速度に影響しないよう、既存処理の一番最後にawaitせず実行する
-            capturePhotoForGallery(blob, fileName, capturedAtMs);
-            return;
-        } catch (err) {
-            if (err && err.name === 'AbortError') {
-                capturePhotoForGallery(blob, fileName, capturedAtMs);
-                return;
-            }
-        }
-    }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    showToast('ダウンロードしました');
-
-    // サイトへの保存(IndexedDB)は表示速度に影響しないよう、既存処理の一番最後にawaitせず実行する
-    capturePhotoForGallery(blob, fileName, capturedAtMs);
+    // 撮影のたびに共有シート・自動ダウンロードは行わず、保存が終わったらギャラリーを自動で開いて
+    // その場で確認・保存できるようにする(openGalleryViewerが現在の写真=最後の1枚を表示するため、
+    // ここでの保存完了を待ってから開く必要がある)
+    await capturePhotoForGallery(blob, fileName, capturedAtMs);
+    openGalleryViewer();
 }
 
 shutterBtn.addEventListener('click', takePhoto);

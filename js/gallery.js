@@ -618,7 +618,7 @@ async function ensureThumbListLoaded() {
     return thumbListLoadPromise;
 }
 
-async function openGalleryViewer() {
+export async function openGalleryViewer() {
     hideTipBubble(galleryBtnFirstVisitTip); // ギャラリーボタンの案内は用が済んだので消す
     await ensureThumbListLoaded();
     if (thumbList.length === 0) {

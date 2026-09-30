@@ -679,6 +679,9 @@ function hideTipBubble(el) {
 function closeGalleryViewer() {
     galleryOverlay.hidden = true;
     galleryOverlay.classList.remove('immersive');
+    galleryOverlay.classList.remove('dismiss-dragging');
+    galleryOverlay.style.transform = '';
+    galleryOverlay.style.opacity = '';
     resetDeleteConfirm();
     hideTipBubble(galleryFirstVisitTip);
 }
@@ -862,6 +865,13 @@ const SWIPE_COMMIT_RATIO = 0.5; // ゆっくりドラッグした場合、画面
 const FAST_FLICK_VELOCITY = 0.5; // px/ms(≈時速500px/s)。これを超える速さの指離しは距離が短くても切り替える
 const VELOCITY_WINDOW_MS = 80; // 速度計算に使う直近の時間窓
 
+// 下スワイプでギャラリーを閉じる操作のしきい値
+const DISMISS_DISTANCE_PX = 120; // これ以上下にドラッグしたら閉じる
+const DISMISS_FLICK_VELOCITY = 0.5; // px/ms。距離が足りなくてもこの速さの下フリックなら閉じる
+const DISMISS_FADE_RANGE_PX = 280; // このぶん引っ張ると不透明度が最低値まで下がる
+const DISMISS_MIN_OPACITY = 0.35;
+const DISMISS_CLOSE_ANIM_MS = 220; // css側のtransition時間と合わせる
+
 let isDragging = false;
 let dragPointerId = null;
 let dragStartX = 0;
@@ -869,10 +879,47 @@ let dragStartY = 0;
 let dragStartT = 0;
 let dragAxis = null; // 'x' | 'y' | null
 let moveHistory = []; // 直近の { x, t } 履歴(速度計算用)
+let moveHistoryY = []; // 下スワイプ閉じる用の { y, t } 履歴
 
 function pushMoveHistory(x, t) {
     moveHistory.push({ x, t });
     while (moveHistory.length > 2 && t - moveHistory[0].t > VELOCITY_WINDOW_MS) moveHistory.shift();
+}
+
+function pushMoveHistoryY(y, t) {
+    moveHistoryY.push({ y, t });
+    while (moveHistoryY.length > 2 && t - moveHistoryY[0].t > VELOCITY_WINDOW_MS) moveHistoryY.shift();
+}
+
+function computeVerticalFlickVelocity() {
+    if (moveHistoryY.length < 2) return 0;
+    const first = moveHistoryY[0];
+    const last = moveHistoryY[moveHistoryY.length - 1];
+    const dt = last.t - first.t;
+    return dt > 0 ? (last.y - first.y) / dt : 0; // px/ms(下方向が正)
+}
+
+// ドラッグ中: 指の動きにそのまま追従させ、引っ張るほど薄くする(iOS風のpull-to-dismiss)
+function setDismissDrag(dy) {
+    galleryOverlay.style.transform = `translate3d(0, ${dy}px, 0)`;
+    galleryOverlay.style.opacity = String(Math.max(DISMISS_MIN_OPACITY, 1 - dy / DISMISS_FADE_RANGE_PX));
+}
+
+// しきい値未満で指を離した時: 通常のtransitionで元の位置・不透明度へ戻す
+function resetDismissDrag() {
+    galleryOverlay.classList.remove('dismiss-dragging');
+    galleryOverlay.style.transform = '';
+    galleryOverlay.style.opacity = '';
+}
+
+// しきい値を超えて指を離した時: 画面外まで滑らかに落としてから閉じる
+function playDismissCloseAnimation() {
+    return new Promise((resolve) => {
+        galleryOverlay.classList.remove('dismiss-dragging'); // 通常のtransitionへ戻す
+        galleryOverlay.style.transform = `translate3d(0, ${window.innerHeight}px, 0)`;
+        galleryOverlay.style.opacity = '0';
+        setTimeout(resolve, DISMISS_CLOSE_ANIM_MS);
+    });
 }
 
 function computeFlickVelocity() {
@@ -895,6 +942,7 @@ galleryStage.addEventListener('pointerdown', (e) => {
     dragStartY = e.clientY;
     dragStartT = performance.now();
     moveHistory = [{ x: e.clientX, t: dragStartT }];
+    moveHistoryY = [{ y: e.clientY, t: dragStartT }];
     galleryTrack.classList.add('dragging');
     try { galleryStage.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
 });
@@ -908,7 +956,13 @@ galleryStage.addEventListener('pointermove', (e) => {
         if (Math.abs(dx) < AXIS_LOCK_THRESHOLD && Math.abs(dy) < AXIS_LOCK_THRESHOLD) return;
         dragAxis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
     }
-    if (dragAxis === 'y') return;
+    if (dragAxis === 'y') {
+        if (dy <= 0) return; // 閉じる操作は下方向のみ。上方向は何もしない
+        pushMoveHistoryY(e.clientY, performance.now());
+        galleryOverlay.classList.add('dismiss-dragging');
+        setDismissDrag(dy);
+        return;
+    }
 
     pushMoveHistory(e.clientX, performance.now());
 
@@ -928,9 +982,21 @@ galleryStage.addEventListener('pointerup', (e) => {
     const dy = e.clientY - dragStartY;
     const dt = performance.now() - dragStartT;
     const wasHorizontalDrag = dragAxis === 'x';
+    const wasDismissDrag = dragAxis === 'y' && dy > 0;
     dragAxis = null;
     cancelScheduledTransform();
     galleryTrack.classList.remove('dragging');
+
+    if (wasDismissDrag) {
+        const verticalVelocity = computeVerticalFlickVelocity();
+        const isFastDownFlick = dy > TAP_MOVE_THRESHOLD && verticalVelocity > DISMISS_FLICK_VELOCITY;
+        if (dy > DISMISS_DISTANCE_PX || isFastDownFlick) {
+            playDismissCloseAnimation().then(closeGalleryViewer);
+        } else {
+            resetDismissDrag();
+        }
+        return;
+    }
 
     if (!wasHorizontalDrag) {
         setTrackTransform(baseTranslate);
@@ -965,6 +1031,7 @@ galleryStage.addEventListener('pointerup', (e) => {
 galleryStage.addEventListener('pointercancel', () => {
     if (!isDragging) return;
     isDragging = false;
+    if (dragAxis === 'y') resetDismissDrag();
     dragAxis = null;
     cancelScheduledTransform();
     galleryTrack.classList.remove('dragging');

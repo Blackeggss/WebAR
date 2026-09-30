@@ -632,10 +632,16 @@ html[data-rotation="ccw"] #switch_camera_btn .switch_icon {
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
   -webkit-tap-highlight-color: transparent;
+  transition: transform 0.22s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.22s ease;
 }
 
 #gallery_overlay[hidden] {
   display: none;
+}
+
+/* 下スワイプで閉じる操作中はドラッグに1:1で追従させたいので、通常のtransitionを止める */
+#gallery_overlay.dismiss-dragging {
+  transition: none;
 }
 
 /* 画像表示エリア: PC・スマホ横画面は画面の縦幅いっぱいに画像高さを合わせる */

@@ -211,22 +211,24 @@ html, body {
   left: 50%;
   transform: translateX(-50%);
 }
+/* 90度/-90度/180度では、画面の短辺方向(横幅)に端寄せすると中心からの距離が
+   ほとんど稼げずカウントダウン数字と被ってしまうため、辺への寄せ方式ではなく
+   画面中心を基準に固定距離(170px)だけずらす方式にする(文字幅に依存せず一定の
+   間隔を確保できる) */
 [data-ui-rotate="90"] .screen_label-top {
   top: 50%;
-  left: max(48px, env(safe-area-inset-left, 48px));
-  transform: translateY(-50%);
+  left: 50%;
+  transform: translate(-50%, -50%) translateX(-170px);
 }
 [data-ui-rotate="-90"] .screen_label-top {
   top: 50%;
-  left: auto;
-  right: max(48px, env(safe-area-inset-right, 48px));
-  transform: translateY(-50%);
+  left: 50%;
+  transform: translate(-50%, -50%) translateX(170px);
 }
 [data-ui-rotate="180"] .screen_label-top {
-  top: auto;
-  bottom: max(48px, env(safe-area-inset-bottom, 48px));
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%) translateY(170px);
 }
 
 .screen_result {

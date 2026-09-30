@@ -13,6 +13,7 @@ html, body {
   --flow_ui_rotate: 0deg;
 }
 
+<<<<<<< HEAD
 /* 各画面の中身(.screen_content)をまとめて回転させる。.screen自体ではなくその中の
    ラッパーを回転させているのは、.screenが持つ半透明の背景(画面全体を薄暗くする演出)まで
    回転すると画面の角に隙間ができてしまうため。.screen_contentは常にinset:0(画面いっぱい)
@@ -26,6 +27,19 @@ html, body {
 }
 #screen_card_builder .screen_content,
 #screen_card_reveal .screen_content {
+=======
+/* 各画面(.screen)の中身をまとめて回転させる。.screenは常にinset:0(画面いっぱい)なので、
+   要素ごとの中心ではなく画面の中心を支点に回転する。保存写真・AR自体の向き補正
+   (js/arEngine.js)とは別物。撮影済み写真の格子(#layout_grid)だけは下で打ち消す。
+   選手カード作成画面(screen_card_builder/screen_card_reveal、フォーム入力を含むため対象外)
+   は個別に打ち消す */
+.screen {
+  transform: rotate(var(--flow_ui_rotate));
+  transition: transform 0.35s ease;
+}
+#screen_card_builder,
+#screen_card_reveal {
+>>>>>>> 9f690b9361048bfca7c2c0270c55b4f4cab2537e
   transform: none;
   transition: none;
 }

@@ -13,18 +13,19 @@ html, body {
   --flow_ui_rotate: 0deg;
 }
 
-/* ポーズ名・カウントダウン等の「追加の文字」まわりのUIを、端末の傾きに合わせて回転させる。
-   保存写真・AR自体の向き補正(js/arEngine.js)とは別物で、対象にも撮影済み写真(preview_img・
-   layout_gridのサムネイル)は含まない。すでに自身のtransformを使っている要素
-   (countdown_number・primary_btn)は直接ではなく専用ラッパー(.flow_orient_rotate)で包む */
-.screen_label,
-.screen_result,
-#pose_photo,
-.roulette,
-.praise_label,
-.thanks_label,
-.flow_orient_rotate {
+/* 各画面(.screen)の中身をまとめて回転させる。.screenは常にinset:0(画面いっぱい)なので、
+   要素ごとの中心ではなく画面の中心を支点に回転する。保存写真・AR自体の向き補正
+   (js/arEngine.js)とは別物。撮影済み写真の格子(#layout_grid)だけは下で打ち消す */
+.screen {
   transform: rotate(var(--flow_ui_rotate));
+  transition: transform 0.35s ease;
+}
+
+/* グリッド(#layout_grid)は親.screenの回転を打ち消して向きを保ったままにする。
+   #layout_grid自身は完成演出(spin-once)で自前のtransformを使うため、
+   打ち消しは別のラッパー要素に持たせる */
+.layout_grid_counter_rotate {
+  transform: rotate(calc(var(--flow_ui_rotate) * -1));
   transition: transform 0.35s ease;
 }
 

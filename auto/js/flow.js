@@ -48,8 +48,8 @@ const POSES = [
     '指ハート 🫰',
 ];
 const AR_MASKS = [
-    'ar_fox.png', 'ar_soccer.png', 'ar_momonga.png', 'ar_cat.png', 'ar_dog.png',
-    'ar_rabbit.png', 'ar_redpanda.png', 'ar_seiren.png', 'ar_squirrel.png', 'ar_usagi.png', 'ar_vermeer.png',
+    'ar_fox.png', 'ar_soccer.png', 'ar_wolf.png', 'ar_cat.png', 'ar_dog.png',
+    'ar_rabbit.png', 'ar_redpanda.png', 'ar_bear.png', 'ar_squirrel.png', 'ar_gura.png', 'ar_vermeer.png',
 ].map((f) => `../assets/auto/${f}`);
 const FINAL_MASK = '../assets/auto/ar_soccer.png'; // 最後の1枚(ポーズ自由)はauto_soccer/と同じくAR固定
 const PRAISE_TEXTS = ['最高！', 'バッチリ！', 'いいね！', 'ナイスショット！'];

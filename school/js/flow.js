@@ -551,11 +551,15 @@ function setupEmailSendUI() {
 
         emailSendBtn.disabled = true;
         emailSendBtn.textContent = '送信中...';
+        emailSkipBtn.hidden = true; // 送信操作を始めたら、スキップしてのやり直しは一旦封じる
         showEmailStatus('', null);
 
         const token = new URLSearchParams(window.location.search).get('token');
 
         try {
+            // WorkerはToken・メール形式・画像の有無といった即座に確認できる検証だけ行い、
+            // 実際のBrevo送信(数秒かかりうる)は裏側で継続する設計のため、ここでは
+            // Workerが受理した時点(res.ok)で成功とみなしてよい(詳細はworker/src/index.js参照)。
             const res = await fetch(`${WORKER_BASE}/send-email`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -574,16 +578,16 @@ function setupEmailSendUI() {
                 throw new Error('send_failed');
             }
 
-            showEmailStatus('写真を送信しました！\n入力したメールアドレスに\n撮影した写真を送信しました。\nありがとうございました！', 'success');
+            showEmailStatus('写真を送信しました！\nありがとうございました！', 'success');
             emailSendBtn.hidden = true;
-            emailSkipBtn.hidden = true;
-            await sleep(3500);
+            await sleep(5000);
             redirectWithToken('../');
         } catch (err) {
             console.error('メール送信に失敗しました: ', err);
             showEmailStatus('写真を送信できませんでした。\nメールアドレスを確認して、\nもう一度お試しください。', 'error');
             emailSendBtn.disabled = false;
             emailSendBtn.textContent = '写真をメールで受け取る';
+            emailSkipBtn.hidden = false;
         }
     });
 }

@@ -366,10 +366,39 @@ function dataUrlToBase64(dataUrl) {
     return match[1];
 }
 
+// Brevoへの実送信は数秒かかることがあるため、クライアントを待たせない。
+// ctx.waitUntil()でWorkerの寿命をレスポンス返却後も延長し、裏側で完了させる
+// (クライアントがこの後すぐ画面遷移・タブを閉じても送信処理自体は継続される)。
+// 結果(成功/失敗)はWorker側ログ(console.error)にのみ出し、クライアントへは返さない。
+async function sendBrevoEmailInBackground(env, email, attachments) {
+    try {
+        const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'api-key': env.BREVO_API_KEY,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                sender: { email: SENDER_EMAIL, name: SENDER_NAME },
+                to: [{ email }],
+                subject: EMAIL_SUBJECT,
+                textContent: EMAIL_BODY,
+                attachment: attachments,
+            }),
+        });
+        if (!brevoRes.ok) {
+            const errText = await brevoRes.text().catch(() => '');
+            console.error('Brevo send failed', brevoRes.status, errText);
+        }
+    } catch (err) {
+        console.error('Brevo request error', err);
+    }
+}
+
 // /WebAR/school/ の撮影写真メール送信機能。既存のToken検証(deriveStatus)を再利用し、
-// Brevo Transactional Email APIへのプロキシとして動作する。Brevoの生エラーは
-// クライアントへ返さず、Worker側ログ(console.error)にのみ出す。
-async function handleSendEmail(request, env) {
+// Brevo Transactional Email APIへのプロキシとして動作する。
+async function handleSendEmail(request, env, ctx) {
     const body = await readBody(request);
     const token = typeof body.token === 'string' ? body.token : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
@@ -413,38 +442,15 @@ async function handleSendEmail(request, env) {
         return json({ success: false, error: 'payload_too_large' }, { status: 413 }, request, env);
     }
 
-    try {
-        const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
-            method: 'POST',
-            headers: {
-                'api-key': env.BREVO_API_KEY,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-            },
-            body: JSON.stringify({
-                sender: { email: SENDER_EMAIL, name: SENDER_NAME },
-                to: [{ email }],
-                subject: EMAIL_SUBJECT,
-                textContent: EMAIL_BODY,
-                attachment: attachments,
-            }),
-        });
-
-        if (!brevoRes.ok) {
-            const errText = await brevoRes.text().catch(() => '');
-            console.error('Brevo send failed', brevoRes.status, errText);
-            return json({ success: false, error: 'send_failed' }, { status: 502 }, request, env);
-        }
-
-        return json({ success: true }, { status: 200 }, request, env);
-    } catch (err) {
-        console.error('Brevo request error', err);
-        return json({ success: false, error: 'send_failed' }, { status: 502 }, request, env);
-    }
+    // ここまでの検証(Token・メール形式・画像の有無)はすべて即座に確認できるものなので、
+    // ここで通れば送信は成功するものとして扱う。実際のBrevo送信は裏側(waitUntil)に回し、
+    // クライアントには即座に受理レスポンスを返す。
+    ctx.waitUntil(sendBrevoEmailInBackground(env, email, attachments));
+    return json({ success: true }, { status: 202 }, request, env);
 }
 
 export default {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const { pathname } = url;
         const method = request.method;
@@ -489,7 +495,7 @@ export default {
                 return await handleSettings(request, env);
             }
             if (pathname === '/send-email' && method === 'POST') {
-                return await handleSendEmail(request, env);
+                return await handleSendEmail(request, env, ctx);
             }
 
             return json({ ok: false, reason: 'not_found' }, { status: 404 }, request, env);

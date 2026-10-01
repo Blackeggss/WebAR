@@ -193,16 +193,21 @@ async function boot() {
     decideSessionPlan(); // ポーズ・ARの抽選だけ先に済ませておく(この時点ではまだ画像を読み込まない)
 
     arLoadingEl.classList.add('ar_loading-show');
+    // 1枚目のマスク画像はこの時点でURLが決まっているので、重いカメラ・AIモデルの読み込みと
+    // 並行して取得を始める(initArEngine呼び出し内でThree.js初期化が同期的に終わるため、
+    // マスク読み込みの完了が先でも安全)。これにより画像のダウンロード時間が実質タダになる
+    const initPromise = arEngine.initArEngine(video, outputCanvas);
+    const maskPromise = arEngine.setMaskUrl(maskPool[0]);
     try {
-        await arEngine.initArEngine(video, outputCanvas);
+        await initPromise;
     } catch (err) {
         console.error('AR初期化に失敗しました: ', err);
         showToast('カメラを起動できませんでした');
         return;
     }
     // 1枚目で実際に使うARの読み込みが終わるまでは、AR読み込み中の表示を残しておく
-// (カメラ・モデルだけ準備できてもマスク画像が白いまま次に進めてしまわないようにするため)
-    await arEngine.setMaskUrl(maskPool[0]);
+    // (カメラ・モデルだけ準備できてもマスク画像が白いまま次に進めてしまわないようにするため)
+    await maskPromise;
     arLoadingEl.classList.remove('ar_loading-show');
 
     // カメラ・AIモデルの読み込みが終わってから先読みを始める(帯域を取り合わないようにするため)

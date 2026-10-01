@@ -116,6 +116,13 @@ async function verifyAdminSession(request, env) {
     }
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_EMAIL_PAYLOAD_BYTES = 15 * 1024 * 1024; // base64画像合計の上限目安(15MB)
+const SENDER_EMAIL = 'photo@timora.jp';
+const SENDER_NAME = '2年12組フォトスポット';
+const EMAIL_SUBJECT = 'フォトスポットで撮影した写真です！';
+const EMAIL_BODY = '2年12組フォトスポットをご利用いただき、ありがとうございました！\n\n撮影した写真を添付しています。\n\n文化祭展示を楽しんでいただきありがとうございました！';
+
 function deriveStatus(record, now) {
     if (record.status === 'revoked') return 'revoked';
     if (record.expiresAt && now > record.expiresAt) return 'expired';
@@ -353,6 +360,89 @@ async function handleSettings(request, env) {
     return json({ ok: true, settings }, { status: 200 }, request, env);
 }
 
+function dataUrlToBase64(dataUrl) {
+    const match = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+    if (!match) return null;
+    return match[1];
+}
+
+// /WebAR/school/ の撮影写真メール送信機能。既存のToken検証(deriveStatus)を再利用し、
+// Brevo Transactional Email APIへのプロキシとして動作する。Brevoの生エラーは
+// クライアントへ返さず、Worker側ログ(console.error)にのみ出す。
+async function handleSendEmail(request, env) {
+    const body = await readBody(request);
+    const token = typeof body.token === 'string' ? body.token : '';
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const images = body.images && typeof body.images === 'object' ? body.images : {};
+    const combined = typeof images.combined === 'string' ? images.combined : '';
+    const individual = Array.isArray(images.individual) ? images.individual : [];
+
+    if (!token) {
+        return json({ success: false, error: 'invalid_request' }, { status: 400 }, request, env);
+    }
+    const record = await env.TOKENS.get(TOKEN_PREFIX + token, 'json');
+    if (!record || deriveStatus(record, Date.now()) !== 'active') {
+        return json({ success: false, error: 'invalid_token' }, { status: 403 }, request, env);
+    }
+
+    if (!email || !EMAIL_RE.test(email)) {
+        return json({ success: false, error: 'invalid_email' }, { status: 400 }, request, env);
+    }
+    if (!combined && individual.length === 0) {
+        return json({ success: false, error: 'invalid_request' }, { status: 400 }, request, env);
+    }
+
+    const attachments = [];
+    let totalBytes = 0;
+    const pushAttachment = (dataUrl, name) => {
+        const base64 = dataUrlToBase64(dataUrl);
+        if (!base64) return false;
+        totalBytes += base64.length;
+        attachments.push({ content: base64, name });
+        return true;
+    };
+    if (combined && !pushAttachment(combined, 'photo_combined.png')) {
+        return json({ success: false, error: 'invalid_request' }, { status: 400 }, request, env);
+    }
+    for (let i = 0; i < individual.length; i++) {
+        if (!pushAttachment(individual[i], `photo_${i + 1}.png`)) {
+            return json({ success: false, error: 'invalid_request' }, { status: 400 }, request, env);
+        }
+    }
+    if (totalBytes > MAX_EMAIL_PAYLOAD_BYTES) {
+        return json({ success: false, error: 'payload_too_large' }, { status: 413 }, request, env);
+    }
+
+    try {
+        const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'api-key': env.BREVO_API_KEY,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                sender: { email: SENDER_EMAIL, name: SENDER_NAME },
+                to: [{ email }],
+                subject: EMAIL_SUBJECT,
+                textContent: EMAIL_BODY,
+                attachment: attachments,
+            }),
+        });
+
+        if (!brevoRes.ok) {
+            const errText = await brevoRes.text().catch(() => '');
+            console.error('Brevo send failed', brevoRes.status, errText);
+            return json({ success: false, error: 'send_failed' }, { status: 502 }, request, env);
+        }
+
+        return json({ success: true }, { status: 200 }, request, env);
+    } catch (err) {
+        console.error('Brevo request error', err);
+        return json({ success: false, error: 'send_failed' }, { status: 502 }, request, env);
+    }
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
@@ -397,6 +487,9 @@ export default {
             }
             if (pathname === '/admin/settings' && method === 'POST') {
                 return await handleSettings(request, env);
+            }
+            if (pathname === '/send-email' && method === 'POST') {
+                return await handleSendEmail(request, env);
             }
 
             return json({ ok: false, reason: 'not_found' }, { status: 404 }, request, env);

@@ -3,7 +3,7 @@
 // URLの ?token= をCloudflare Workerに問い合わせて有効性を確認する。
 // カメラ/AR/IndexedDB等、呼び出し側の既存処理には一切関与しない。
 
-const WORKER_BASE = 'https://webar-auth.blackeggs-webar.workers.dev';
+export const WORKER_BASE = 'https://webar-auth.blackeggs-webar.workers.dev';
 const PUBLIC_URL = 'https://blackeggss.github.io/WebAR/public/';
 const REDIRECT_COUNTDOWN_SEC = 4;
 

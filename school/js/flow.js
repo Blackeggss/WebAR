@@ -540,7 +540,7 @@ function setupEmailSendUI() {
 
     emailSkipBtn.addEventListener('click', () => {
         arEngine.saveOrientationStateForOwnReload();
-        redirectWithToken('../');
+        redirectWithToken('./'); // メールは送らずに/school/自体へ戻る(次の人のため)
     });
 
     emailSendBtn.addEventListener('click', async () => {

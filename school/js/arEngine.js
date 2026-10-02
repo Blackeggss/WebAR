@@ -307,13 +307,23 @@ function classifyAngle(angleDeg, previous) {
     return 'none';
 }
 
+// Chromebook等、ネイティブ形状が横長でセンサーの基準軸がスマホと異なる端末では、
+// 実際には縦画面のままなのに加速度センサーの生値だけでは「横向きに回転した」と
+// 誤判定することがある(school/での実機確認で発覚)。CSS上も実際に横向きになっている
+// 場合だけ'cw'/'ccw'を信用し、そうでなければ'none'として扱う(実機の向きが正であるため)。
 function computeRotationState() {
-    if (rollAvailable) return classifyAngle(latestRollDeg, rotationState);
-    if (gammaAvailable) return classifyAngle(latestGamma * GAMMA_SIGN, rotationState);
-    const angle = getScreenAngle();
-    if (angle === 270) return 'cw';
-    if (angle === 90) return 'ccw';
-    return 'none';
+    let candidate;
+    if (rollAvailable) {
+        candidate = classifyAngle(latestRollDeg, rotationState);
+    } else if (gammaAvailable) {
+        candidate = classifyAngle(latestGamma * GAMMA_SIGN, rotationState);
+    } else {
+        const angle = getScreenAngle();
+        if (angle === 270) candidate = 'cw';
+        else if (angle === 90) candidate = 'ccw';
+        else candidate = 'none';
+    }
+    return landscapeMql.matches ? candidate : 'none';
 }
 
 function updateOutputCanvasSize() {

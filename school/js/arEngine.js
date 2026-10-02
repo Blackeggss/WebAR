@@ -205,6 +205,46 @@ let lockCheckPendingSinceMs = null;
 const ORIENTATION_LOCK_CHECK_ANGLE = ROTATE_ENTER_ANGLE;
 const ORIENTATION_LOCK_GRACE_MS = 500;
 
+// ---- ページ自身が起こす遷移(メール送信完了後に/school/へ戻る等)をまたいだ回転状態の引き継ぎ ----
+// 初回の向き判定(runOrientationCheck)は「端末がある程度傾くまで待って、その瞬間CSS上の
+// 向きが追従しているか」を見て一度だけロック有無を判定する作りのため、既にその傾きで
+// 静止した状態でページが読み込まれる(=自分自身のリダイレクトで再読み込みされた直後、など)と
+// 正しく判定できないことがある(Chromebookでキーボードを外した縦画面時などで確認)。
+// 自分自身が起こす遷移の直前に今の判定結果を保存しておき、次の読み込みではそれを
+// そのまま引き継いで初回判定をやり直さないようにすることで、この問題を回避する
+// (判定ロジック自体は変更しない。QRコードからの新規アクセス等、通常の初回読み込みでは
+//  保存値が無いので従来通り初回判定が走る)。
+const ORIENTATION_STATE_KEY = 'webar_school_orientation_state_v1';
+
+function restoreOrientationStateIfCarriedOver() {
+    try {
+        const raw = sessionStorage.getItem(ORIENTATION_STATE_KEY);
+        if (!raw) return;
+        sessionStorage.removeItem(ORIENTATION_STATE_KEY); // 引き継ぎは1回限り
+        const saved = JSON.parse(raw);
+        if (typeof saved.rotationState === 'string') rotationState = saved.rotationState;
+        if (typeof saved.upsideDownDir === 'number') upsideDownDir = saved.upsideDownDir;
+        if (typeof saved.isUpsideDown === 'boolean') isUpsideDown = saved.isUpsideDown;
+        if (typeof saved.lockedEarlyZone === 'string') lockedEarlyZone = saved.lockedEarlyZone;
+        if (typeof saved.lockedMode === 'boolean') lockedMode = saved.lockedMode;
+        orientationCheckDone = true; // 引き継いだ場合は不安定になりがちな初回判定を省略する
+    } catch {
+        // sessionStorageが使えない/壊れている場合は何もしない(通常通り初回判定から始まる)
+    }
+}
+restoreOrientationStateIfCarriedOver();
+
+// 自分自身が起こすページ遷移の直前に呼ぶ(school/js/flow.jsのredirectWithToken呼び出し前)。
+export function saveOrientationStateForOwnReload() {
+    try {
+        sessionStorage.setItem(ORIENTATION_STATE_KEY, JSON.stringify({
+            rotationState, upsideDownDir, isUpsideDown, lockedEarlyZone, lockedMode,
+        }));
+    } catch {
+        // 保存に失敗しても次回は通常通り初回判定が走るだけなので無視してよい
+    }
+}
+
 let rollAvailable = false;
 let latestRollDeg = 0;
 let gammaAvailable = false;

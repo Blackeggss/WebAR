@@ -539,6 +539,7 @@ function setupEmailSendUI() {
     });
 
     emailSkipBtn.addEventListener('click', () => {
+        arEngine.saveOrientationStateForOwnReload();
         redirectWithToken('../');
     });
 
@@ -581,6 +582,7 @@ function setupEmailSendUI() {
             showEmailStatus('写真を送信しました！\nありがとうございました！', 'success');
             emailSendBtn.hidden = true;
             await sleep(5000);
+            arEngine.saveOrientationStateForOwnReload(); // 回転判定結果を次の読み込みへ引き継ぎ、初回判定のやり直しによる誤判定を防ぐ
             redirectWithToken('./'); // ギャラリー(/WebAR/)ではなく、次の人のために/school/自体へ戻す(IndexedDB保存は上のsaveSessionのまま)
         } catch (err) {
             console.error('メール送信に失敗しました: ', err);

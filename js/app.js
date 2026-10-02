@@ -234,6 +234,10 @@ const ROLL_SIGN = 1;
 const GAMMA_SIGN = 1;
 // 上下さかさま時、顔検出用に映像を回転させる向き。実機で90度の左右が逆に感じる場合は-1にしてください。
 const DETECTION_ROTATION_SIGN = 1;
+// accelerationIncludingGravityのy成分の符号がAndroidとiOSで逆になるため、正位置で
+// 保持していても0°ではなく180°(上下逆)と誤判定される端末がある(Pixel/Galaxyで確認)。
+// iOS側の計算式・挙動は一切変更せず、Androidのときだけy成分の符号を反転させて揃える。
+const ROLL_Y_SIGN = /Android/i.test(navigator.userAgent) ? 1 : -1;
 
 // 縦持ちを0度として3分割(-45〜45:縦,45〜180:cw,-45〜-180:ccw)。HYSTERESISは境界のちらつき防止
 // (ロック中専用。画面自体は回転しないため、ブラウザの縦横切替とは無関係に写真の回転補正だけを45度で行う)
@@ -498,7 +502,7 @@ function handleDeviceMotion(event) {
     if (Math.hypot(smoothedAx, smoothedAy) < 2) return; // ほぼ水平(画面が真上/真下)で向きが定義できない場合は無視
     rollAvailable = true;
     // 第2引数(Y)の符号反転: 縦持ち(0度)と上下逆さま(180度)が逆算されていたための補正
-    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
+    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, smoothedAy * ROLL_Y_SIGN) * 180 / Math.PI;
     updateUpsideDownState(latestRollDeg);
     updateLockedEarlyZone(latestRollDeg);
 

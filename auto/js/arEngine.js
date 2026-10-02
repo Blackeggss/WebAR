@@ -187,6 +187,10 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
 const ROLL_SIGN = 1;
 const GAMMA_SIGN = 1;
 const DETECTION_ROTATION_SIGN = 1;
+// accelerationIncludingGravityのy成分の符号がAndroidとiOSで逆になるため、正位置で
+// 保持していても0°ではなく180°(上下逆)と誤判定される端末がある(Pixel/Galaxyで確認)。
+// iOS側の計算式・挙動は一切変更せず、Androidのときだけy成分の符号を反転させて揃える。
+const ROLL_Y_SIGN = /Android/i.test(navigator.userAgent) ? 1 : -1;
 
 const ZONE_BOUNDARY_1 = 45;
 const HYSTERESIS = 5;
@@ -405,7 +409,7 @@ function handleDeviceMotion(event) {
     smoothedAy += (acc.y - smoothedAy) * ROLL_SMOOTHING;
     if (Math.hypot(smoothedAx, smoothedAy) < 2) return;
     rollAvailable = true;
-    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
+    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, smoothedAy * ROLL_Y_SIGN) * 180 / Math.PI;
     updateUpsideDownState(latestRollDeg);
     updateLockedEarlyZone(latestRollDeg);
 

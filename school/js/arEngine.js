@@ -187,6 +187,10 @@ function getOutputCanvasSize(dispWidth, dispHeight) {
 const ROLL_SIGN = 1;
 const GAMMA_SIGN = 1;
 const DETECTION_ROTATION_SIGN = 1;
+// accelerationIncludingGravityのy成分の符号がAndroidとiOSで逆になるため、正位置で
+// 保持していても0°ではなく180°(上下逆)と誤判定される端末がある(Pixel/Galaxyで確認)。
+// iOS側の計算式・挙動は一切変更せず、Androidのときだけy成分の符号を反転させて揃える。
+const ROLL_Y_SIGN = /Android/i.test(navigator.userAgent) ? 1 : -1;
 
 const ZONE_BOUNDARY_1 = 45;
 const HYSTERESIS = 5;
@@ -307,10 +311,14 @@ function classifyAngle(angleDeg, previous) {
     return 'none';
 }
 
-// Chromebook等、ネイティブ形状が横長でセンサーの基準軸がスマホと異なる端末では、
-// 実際には縦画面のままなのに加速度センサーの生値だけでは「横向きに回転した」と
+// Chromebook等(キーボード着脱式でネイティブ形状が横長の機種)はセンサーの基準軸が
+// スマホと異なり、縦画面のままでも加速度センサーの生値だけでは「横向きに回転した」と
 // 誤判定することがある(school/での実機確認で発覚)。CSS上も実際に横向きになっている
-// 場合だけ'cw'/'ccw'を信用し、そうでなければ'none'として扱う(実機の向きが正であるため)。
+// 場合だけ'cw'/'ccw'を信用するガードを入れるが、これはChromeOS固有の問題への対処であり、
+// スマホ(iOS/Android)はCSSの向き反映にタイミング差があるため同じガードをかけると
+// ロック解除状態での回転追従が逆に壊れる。そのためガードはChromeOS端末にのみ適用する。
+const isChromeOS = /CrOS/.test(navigator.userAgent);
+
 function computeRotationState() {
     let candidate;
     if (rollAvailable) {
@@ -323,6 +331,7 @@ function computeRotationState() {
         else if (angle === 90) candidate = 'ccw';
         else candidate = 'none';
     }
+    if (!isChromeOS) return candidate;
     return landscapeMql.matches ? candidate : 'none';
 }
 
@@ -455,7 +464,7 @@ function handleDeviceMotion(event) {
     smoothedAy += (acc.y - smoothedAy) * ROLL_SMOOTHING;
     if (Math.hypot(smoothedAx, smoothedAy) < 2) return;
     rollAvailable = true;
-    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, -smoothedAy) * 180 / Math.PI;
+    latestRollDeg = Math.atan2(smoothedAx * ROLL_SIGN, smoothedAy * ROLL_Y_SIGN) * 180 / Math.PI;
     updateUpsideDownState(latestRollDeg);
     updateLockedEarlyZone(latestRollDeg);
 

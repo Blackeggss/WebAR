@@ -581,7 +581,7 @@ function setupEmailSendUI() {
             showEmailStatus('写真を送信しました！\nありがとうございました！', 'success');
             emailSendBtn.hidden = true;
             await sleep(5000);
-            redirectWithToken('../');
+            redirectWithToken('./'); // ギャラリー(/WebAR/)ではなく、次の人のために/school/自体へ戻す(IndexedDB保存は上のsaveSessionのまま)
         } catch (err) {
             console.error('メール送信に失敗しました: ', err);
             showEmailStatus('写真を送信できませんでした。\nメールアドレスを確認して、\nもう一度お試しください。', 'error');

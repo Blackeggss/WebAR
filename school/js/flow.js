@@ -441,7 +441,7 @@ function combineImages(images, type) {
                 ctx.drawImage(img, x + (cellW - dw) / 2, y + (cellH - dh) / 2, dw, dh);
                 ctx.restore();
                 loaded++;
-                if (loaded === images.length) resolve(canvas.toDataURL('image/png'));
+                if (loaded === images.length) resolve(canvas.toDataURL('image/jpeg', 0.9)); // メール添付サイズ削減のためJPEGで保存(位置計算は描画後なので影響なし)
             };
             img.src = src;
         });

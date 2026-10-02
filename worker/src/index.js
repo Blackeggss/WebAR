@@ -360,10 +360,13 @@ async function handleSettings(request, env) {
     return json({ ok: true, settings }, { status: 200 }, request, env);
 }
 
-function dataUrlToBase64(dataUrl) {
-    const match = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+const IMAGE_EXTENSIONS_BY_SUBTYPE = { jpeg: 'jpg', jpg: 'jpg', png: 'png', webp: 'webp' };
+
+function parseImageDataUrl(dataUrl) {
+    const match = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/);
     if (!match) return null;
-    return match[1];
+    const subtype = match[1].toLowerCase();
+    return { base64: match[2], extension: IMAGE_EXTENSIONS_BY_SUBTYPE[subtype] || subtype };
 }
 
 // Brevoへの実送信は数秒かかることがあるため、クライアントを待たせない。
@@ -423,18 +426,18 @@ async function handleSendEmail(request, env, ctx) {
 
     const attachments = [];
     let totalBytes = 0;
-    const pushAttachment = (dataUrl, name) => {
-        const base64 = dataUrlToBase64(dataUrl);
-        if (!base64) return false;
-        totalBytes += base64.length;
-        attachments.push({ content: base64, name });
+    const pushAttachment = (dataUrl, baseName) => {
+        const parsed = parseImageDataUrl(dataUrl);
+        if (!parsed) return false;
+        totalBytes += parsed.base64.length;
+        attachments.push({ content: parsed.base64, name: `${baseName}.${parsed.extension}` });
         return true;
     };
-    if (combined && !pushAttachment(combined, 'photo_combined.png')) {
+    if (combined && !pushAttachment(combined, 'photo_combined')) {
         return json({ success: false, error: 'invalid_request' }, { status: 400 }, request, env);
     }
     for (let i = 0; i < individual.length; i++) {
-        if (!pushAttachment(individual[i], `photo_${i + 1}.png`)) {
+        if (!pushAttachment(individual[i], `photo_${i + 1}`)) {
             return json({ success: false, error: 'invalid_request' }, { status: 400 }, request, env);
         }
     }

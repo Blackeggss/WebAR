@@ -889,8 +889,10 @@ function getPhotoCanvas() {
 
 export async function capturePhoto() {
     const photoCanvas = getPhotoCanvas();
-    const blob = await new Promise((resolve) => photoCanvas.toBlob(resolve, 'image/png', 1.0));
-    const dataUrl = photoCanvas.toDataURL('image/png');
+    // メール添付の合計サイズを抑えるため、実機ノイズを含む写真でも軽量なJPEGで保存する
+    // (位置・回転の計算はここより前の描画処理で完結済みのため、形式変更の影響はない)
+    const blob = await new Promise((resolve) => photoCanvas.toBlob(resolve, 'image/jpeg', 0.9));
+    const dataUrl = photoCanvas.toDataURL('image/jpeg', 0.9);
     return { blob, dataUrl, faceRectsNormalized: lastFaceRectsNormalized };
 }
 

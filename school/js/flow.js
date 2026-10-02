@@ -394,6 +394,10 @@ async function runSequence() {
     // 1枚目と系統が異なるショットが1つでもあれば「混在」とみなし、まとめて表示は行わずサンクスへ
     const mixedFamily = shotFamilies.some((f) => f !== shotFamilies[0]);
     if (mixedFamily) {
+        // runLayoutStep()をスキップするこの分岐でも、カメラ・検出ループは必ず止める。
+        // school/はサンクス画面でメール送信/スキップが選ばれるまで戻らないため、ここで
+        // 止め忘れるとライブカメラが動いたまま半透明の画面越しに透けて見え続けてしまう。
+        arEngine.shutdownCamera();
         await runThanksStep();
         return;
     }
